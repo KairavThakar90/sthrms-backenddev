@@ -613,6 +613,31 @@ exports.shouldRequireAdministratorOnlyApproval = shouldRequireAdministratorOnlyA
 exports.shouldNotifyAdministratorForLeaderDecision = shouldNotifyAdministratorForLeaderDecision;
 exports.shouldNotifyAdministratorForFinalDecision = shouldNotifyAdministratorForFinalDecision;
 
+exports.getCurrentPolicyDocument = async (req, res) => {
+  try {
+    const requestedYear = req.query?.year ? parseInt(req.query.year, 10) : new Date().getFullYear();
+    const year = Number.isNaN(requestedYear) ? new Date().getFullYear() : requestedYear;
+
+    const [rows] = await pool.query(
+      'SELECT policy_document FROM wp_st_leave_policy WHERE year = ? LIMIT 1',
+      [year]
+    );
+
+    const policyDocument = rows[0]?.policy_document || null;
+
+    return res.json({
+      success: true,
+      data: {
+        year,
+        policy_document: policyDocument,
+      },
+    });
+  } catch (error) {
+    console.error('[Leave Policy] Failed to fetch policy document:', error);
+    return res.status(500).json({ error: 'Failed to fetch policy document.' });
+  }
+};
+
 exports.handleActionLink = async (req, res) => {
   try {
     const leaveId = parseInt(req.params.id, 10);
@@ -1009,6 +1034,358 @@ exports.configureLeaveBalance = async (req, res) => {
 };
 
 /**
+ * 3a. Update an existing leave request
+ * PUT /api/leaves/:id
+ */
+exports.updateLeave = async (req, res) => {
+  try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ error: 'Unauthorized: valid token required.' });
+    }
+
+    const employee = req.user;
+    const leaveId = req.params.id;
+    const { leave_type, start_date, end_date, reason, day_type = 'full_day', half_day_period = null } = req.body;
+
+    if (!leaveId) {
+      return res.status(400).json({ error: 'Leave ID is required.' });
+    }
+
+    const [leaveRows] = await pool.query('SELECT * FROM wp_hrms_leaves WHERE id = ? LIMIT 1', [leaveId]);
+    if (leaveRows.length === 0) {
+      return res.status(404).json({ error: 'Leave request not found.' });
+    }
+
+    const existingLeave = leaveRows[0];
+    if (parseInt(existingLeave.employee_id, 10) !== parseInt(employee.id, 10)) {
+      return res.status(403).json({ error: 'You can only update your own leave request.' });
+    }
+
+    if (['approved', 'rejected', 'cancelled'].includes(existingLeave.status)) {
+      return res.status(400).json({ error: 'This leave request can no longer be updated.' });
+    }
+
+    if (!leave_type || !start_date || !end_date || !reason) {
+      return res.status(400).json({ error: 'leave_type, start_date, end_date, and reason are required' });
+    }
+
+    const canonicalLeaveType = normalizeLeaveType(leave_type);
+    if (canonicalLeaveType === 'EL') {
+      if (day_type !== 'full_day') {
+        return res.status(400).json({ error: "Early Leave must be requested as a 2-hour leave using day_type 'full_day'." });
+      }
+      if (half_day_period) {
+        return res.status(400).json({ error: "Early Leave does not support half-day periods. Use day_type 'full_day' only." });
+      }
+      if (start_date !== end_date) {
+        return res.status(400).json({ error: 'Early Leave must be requested for a single day only.' });
+      }
+    } else {
+      if (!['full_day', 'half_day'].includes(day_type)) {
+        return res.status(400).json({ error: "Invalid day_type. Must be 'full_day' or 'half_day'" });
+      }
+    }
+
+    let requestedDays = 0;
+    let finalHalfDayPeriod = null;
+    let requestedPaidDays = 0;
+    let requestedLwpDays = 0;
+
+    if (canonicalLeaveType === 'EL') {
+      requestedDays = 0.25;
+      finalHalfDayPeriod = null;
+    } else if (day_type === 'half_day') {
+      if (!['first_half', 'second_half'].includes(half_day_period)) {
+        return res.status(400).json({ error: "For half-day leaves, half_day_period is required and must be 'first_half' or 'second_half'" });
+      }
+      if (start_date !== end_date) {
+        return res.status(400).json({ error: 'For half-day leaves, start_date and end_date must be the same date' });
+      }
+      requestedDays = 0.5;
+      finalHalfDayPeriod = half_day_period;
+    } else {
+      if (canonicalLeaveType === 'HB' && start_date !== end_date) {
+        return res.status(400).json({ error: 'Birthday leave must be requested for a single day only.' });
+      }
+
+      const start = new Date(start_date);
+      const end = new Date(end_date);
+      if (start > end) {
+        return res.status(400).json({ error: 'Start date cannot be after end date' });
+      }
+      const sandwichSplit = calculateSandwichLeaveSplit(start_date, end_date);
+      requestedDays = sandwichSplit.totalDays;
+      requestedPaidDays = sandwichSplit.paidDays;
+      requestedLwpDays = sandwichSplit.lwpDays;
+
+      if (requestedDays === 0) {
+        return res.status(400).json({ error: 'The selected date range contains only weekends/holidays. No leave days required.' });
+      }
+    }
+
+    const startYear = new Date(start_date).getFullYear();
+    let matchedLeaveType = canonicalLeaveType;
+    let matchedFullName = LEAVE_TYPE_FULL_NAME_MAP[canonicalLeaveType] || leave_type;
+    let totalAllottedFromPolicy = null;
+    const leaveRequiresBalance = !SPECIAL_BALANCE_FREE_LEAVE_TYPES.includes(canonicalLeaveType);
+
+    if (canonicalLeaveType === 'EL') {
+      const compensate_date = req.body.compensate_date;
+      if (!compensate_date) {
+        return res.status(400).json({ error: 'Early Leave requires compensate_date. Provide a date within the current week or next week.' });
+      }
+      if (!isWithinCurrentOrNextWeek(start_date, compensate_date)) {
+        return res.status(400).json({ error: 'Compensate date must be within the same week or the following week of the early leave.' });
+      }
+      requestedDays = 1;
+      matchedLeaveType = 'EL';
+      matchedFullName = 'Early Leave (2 hours)';
+      totalAllottedFromPolicy = 0.00;
+    }
+
+    if (canonicalLeaveType === 'HB') {
+      const birthdayMeta = await getUserMetaValue(employee.id, 'birthday_date');
+      if (!birthdayMeta) {
+        return res.status(400).json({ error: 'Birthday date is not configured in your profile. You cannot apply for birthday leave.' });
+      }
+
+      const birthday = new Date(birthdayMeta);
+      if (Number.isNaN(birthday.getTime())) {
+        return res.status(400).json({ error: 'Birthday date stored in profile is invalid. Contact HR to update your profile.' });
+      }
+
+      const requestDate = new Date(start_date);
+      const upcomingBirthdayDate = getUpcomingBirthdayDate(birthday, requestDate);
+      if (!upcomingBirthdayDate) {
+        return res.status(400).json({ error: 'Birthday date stored in profile is invalid. Contact HR to update your profile.' });
+      }
+
+      const requestDateKey = formatDateOnly(requestDate);
+      const upcomingBirthdayKey = formatDateOnly(upcomingBirthdayDate);
+      if (requestDateKey !== upcomingBirthdayKey) {
+        return res.status(400).json({ error: 'Birthday leave can only be applied on your upcoming birthday date.' });
+      }
+
+      if (isWeekendDate(requestDate)) {
+        return res.status(400).json({ error: 'Birthday leave is not available when your birthday falls on a weekend.' });
+      }
+    }
+
+    if (canonicalLeaveType === CL_TYPE) {
+      const probationInfo = await getProbationInfo(employee.id, new Date(start_date));
+      if (!probationInfo.canUseCl) {
+        return res.status(400).json({
+          error: `CL leave is not available until probation completes on ${formatDateOnly(probationInfo.probationCompleteDate)}.`
+        });
+      }
+    }
+
+    if (leaveRequiresBalance) {
+      if (matchedLeaveType !== 'EL') {
+        const policyQuery = `SELECT leave_policy_json FROM wp_st_leave_policy WHERE year = ?`;
+        const [policyRows] = await pool.query(policyQuery, [startYear]);
+        if (policyRows.length === 0) {
+          return res.status(400).json({ error: `No leave policy configured for the year ${startYear}. Contact Admin/HR.` });
+        }
+
+        try {
+          const policies = JSON.parse(policyRows[0].leave_policy_json);
+          const matchedPolicy = policies.find((p) => p.full_name.toLowerCase() === leave_type.toLowerCase() || p.short_form.toLowerCase() === leave_type.toLowerCase());
+          if (!matchedPolicy) {
+            const allowedTypes = policies.map((p) => `${p.short_form} (${p.full_name})`).join(', ');
+            return res.status(400).json({ error: `Invalid leave type '${leave_type}' for year ${startYear}. Allowed types: ${allowedTypes}` });
+          }
+          matchedLeaveType = matchedPolicy.short_form;
+          matchedFullName = matchedPolicy.full_name;
+          totalAllottedFromPolicy = parseFloat(matchedPolicy.total_leaves) || 0.00;
+        } catch (parseErr) {
+          console.error('Failed to parse leave policy JSON:', parseErr);
+          return res.status(500).json({ error: 'Failed to validate leave policy.' });
+        }
+      }
+    } else {
+      matchedLeaveType = 'LWP';
+      matchedFullName = LEAVE_TYPE_FULL_NAME_MAP.LWP;
+      totalAllottedFromPolicy = 0.00;
+    }
+
+    const existingLeaveQuery = `
+      SELECT id, status, start_date, end_date
+      FROM wp_hrms_leaves
+      WHERE employee_id = ?
+        AND id != ?
+        AND status != 'rejected'
+    `;
+    const [existingLeaveRows] = await pool.query(existingLeaveQuery, [employee.id, leaveId]);
+    const hasExistingOverlap = existingLeaveRows.some((row) => hasDateRangeOverlap(start_date, end_date, row.start_date, row.end_date));
+    if (hasExistingOverlap) {
+      return res.status(409).json({ error: 'You already have another leave request for one or more of the selected dates.' });
+    }
+
+    let cl_days_charged = 0;
+    let extra_lwp_days = 0;
+    let effectivePaidDays = requestedPaidDays || requestedDays;
+    let effectiveLwpDays = requestedLwpDays || Math.max(0, requestedDays - effectivePaidDays);
+
+    if (matchedLeaveType === CL_TYPE) {
+      const balanceRow = await getOrCreateLeaveBalanceRow(employee.id, startYear);
+      const balanceEntry = balanceRow.balanceJson[matchedLeaveType];
+      const remainingDays = getLeaveEntryRemaining(balanceEntry, matchedLeaveType);
+      const monthlyAvailable = parseFloat(balanceEntry?.monthly_available || 0);
+      const effectiveClAvailable = Math.min(monthlyAvailable, remainingDays);
+      cl_days_charged = Math.min(effectivePaidDays, effectiveClAvailable);
+      extra_lwp_days = effectiveLwpDays + Math.max(0, effectivePaidDays - cl_days_charged);
+    } else if (matchedLeaveType !== 'LWP') {
+      extra_lwp_days = effectiveLwpDays;
+    }
+
+    const requireAdministratorOnlyApproval = shouldRequireAdministratorOnlyApproval(employee.role);
+    const level1Approver = employee.role === 'leader' || requireAdministratorOnlyApproval ? null : await resolveLevel1Approver(employee);
+
+    let leaderId = null;
+    let leaderStatus = 'pending';
+    let hrStatus = 'pending';
+    let overallStatus = 'pending';
+
+    if (employee.role === 'leader') {
+      leaderId = employee.id;
+      leaderStatus = 'approved';
+      overallStatus = 'partially_approved';
+    } else if (requireAdministratorOnlyApproval) {
+      leaderStatus = 'approved';
+      overallStatus = 'partially_approved';
+    } else if (level1Approver) {
+      leaderId = parseInt(level1Approver.ID, 10);
+    } else {
+      leaderStatus = 'pending';
+      overallStatus = 'pending';
+    }
+
+    const updateQuery = `
+      UPDATE wp_hrms_leaves
+      SET leave_type = ?, start_date = ?, end_date = ?, leave_days = ?, cl_days_charged = ?, extra_lwp_days = ?, reason = ?, day_type = ?, half_day_period = ?, compensate_date = ?, leader_id = ?, leader_status = ?, hr_status = ?, status = ?
+      WHERE id = ? AND employee_id = ?
+    `;
+    await pool.query(updateQuery, [
+      matchedLeaveType,
+      start_date,
+      end_date,
+      requestedDays,
+      cl_days_charged,
+      extra_lwp_days,
+      reason,
+      day_type,
+      finalHalfDayPeriod,
+      canonicalLeaveType === 'EL' ? req.body.compensate_date : null,
+      leaderId,
+      leaderStatus,
+      hrStatus,
+      overallStatus,
+      leaveId,
+      employee.id,
+    ]);
+
+    const leaveData = {
+      id: leaveId,
+      leave_type: matchedLeaveType,
+      leave_type_full: matchedFullName,
+      start_date,
+      end_date,
+      reason,
+      days: requestedDays,
+      day_type,
+      half_day_period: finalHalfDayPeriod,
+    };
+
+    void emailService.notifyEmployeeLeaveUpdated(employee.email, employee.name, leaveData);
+
+    if (requireAdministratorOnlyApproval) {
+      const administratorEmails = await getAdministratorEmails();
+      for (const adminEmail of administratorEmails) {
+        await emailService.notifyHRLeaveUpdated(adminEmail, employee.name, employee.name, leaveData);
+      }
+    } else {
+      const hrEmails = await getHrEmails();
+      for (const hrEmail of hrEmails) {
+        await emailService.notifyHRLeaveUpdated(hrEmail, employee.name, employee.name, leaveData);
+      }
+
+      if (level1Approver) {
+        await emailService.notifyLeaderLeaveUpdated(level1Approver.user_email, employee.name, leaveData);
+      }
+    }
+
+    return res.json({
+      message: 'Leave request updated successfully and sent for re-review.',
+      leave_id: leaveId,
+      status: overallStatus,
+      leader_status: leaderStatus,
+      hr_status: hrStatus,
+    });
+  } catch (err) {
+    console.error('updateLeave error:', err);
+    return res.status(500).json({ error: 'Failed to update leave request.' });
+  }
+};
+
+/**
+ * 3c. Cancel an existing leave request
+ * PUT /api/leaves/:id/cancel
+ */
+exports.cancelLeave = async (req, res) => {
+  try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ error: 'Unauthorized: valid token required.' });
+    }
+
+    const employee = req.user;
+    const leaveId = req.params.id;
+
+    if (!leaveId) {
+      return res.status(400).json({ error: 'Leave ID is required.' });
+    }
+
+    const [leaveRows] = await pool.query('SELECT * FROM wp_hrms_leaves WHERE id = ? LIMIT 1', [leaveId]);
+    if (leaveRows.length === 0) {
+      return res.status(404).json({ error: 'Leave request not found.' });
+    }
+
+    const existingLeave = leaveRows[0];
+    if (parseInt(existingLeave.employee_id, 10) !== parseInt(employee.id, 10)) {
+      return res.status(403).json({ error: 'You can only cancel your own leave request.' });
+    }
+
+    if (['approved', 'rejected', 'cancelled'].includes(existingLeave.status)) {
+      return res.status(400).json({ error: 'This leave request cannot be cancelled.' });
+    }
+
+    if (!['pending', 'partially_approved'].includes(existingLeave.status)) {
+      return res.status(400).json({ error: `This leave request is currently ${existingLeave.status} and cannot be cancelled.` });
+    }
+
+    const [result] = await pool.query(
+      `UPDATE wp_hrms_leaves
+       SET status = 'cancelled'
+       WHERE id = ? AND employee_id = ? AND status IN ('pending', 'partially_approved')`,
+      [leaveId, employee.id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(409).json({ error: 'Leave request could not be cancelled. It may already be processed or no longer editable.' });
+    }
+
+    return res.json({
+      message: 'Leave request cancelled successfully.',
+      leave_id: leaveId,
+      status: 'cancelled'
+    });
+  } catch (err) {
+    console.error('cancelLeave error:', err);
+    return res.status(500).json({ error: 'Failed to cancel leave request.' });
+  }
+};
+
+/**
  * 3. Apply for Leave
  * POST /api/leaves
  */
@@ -1049,7 +1426,7 @@ exports.applyLeave = async (req, res) => {
     let requestedLwpDays = 0;
 
     if (canonicalLeaveType === 'EL') {
-      requestedDays = 0.25;
+      requestedDays = 1;
       finalHalfDayPeriod = null;
     } else if (day_type === 'half_day') {
       if (!['first_half', 'second_half'].includes(half_day_period)) {
@@ -1109,8 +1486,8 @@ exports.applyLeave = async (req, res) => {
         return res.status(400).json({ error: 'You have already taken Early Leave in this month. Only one Early Leave per month is allowed.' });
       }
 
-      // Set requestedDays to 2 hours => 0.25 of a day
-      requestedDays = 0.25;
+      // EL is treated as a separate leave type and stored as 1 day
+      requestedDays = 1;
       // EL is free (no balance deduction) and treated specially
       matchedLeaveType = 'EL';
       matchedFullName = 'Early Leave (2 hours)';

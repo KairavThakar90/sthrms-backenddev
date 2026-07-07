@@ -10,6 +10,7 @@ const USER_META_KEYS = {
   joiningDate: 'joining_date',
   bioMaxId: 'bio_max_id',
   birthdayDate: 'birthday_date',
+  designation: 'designation',
   profileIcon: 'profile_icon',
 };
 
@@ -258,6 +259,7 @@ const getProfile = async (req, res) => {
         (SELECT meta_value FROM wp_usermeta WHERE user_id = u.ID AND meta_key = ? LIMIT 1) AS joining_date,
         (SELECT meta_value FROM wp_usermeta WHERE user_id = u.ID AND meta_key = ? LIMIT 1) AS bio_max_id,
         (SELECT meta_value FROM wp_usermeta WHERE user_id = u.ID AND meta_key = ? LIMIT 1) AS birthday_date,
+        (SELECT meta_value FROM wp_usermeta WHERE user_id = u.ID AND meta_key = ? LIMIT 1) AS designation,
         (SELECT meta_value FROM wp_usermeta WHERE user_id = u.ID AND meta_key = ? LIMIT 1) AS profile_icon
       FROM wp_users u
       WHERE u.ID = ?
@@ -268,6 +270,7 @@ const getProfile = async (req, res) => {
       USER_META_KEYS.joiningDate,
       USER_META_KEYS.bioMaxId,
       USER_META_KEYS.birthdayDate,
+      USER_META_KEYS.designation,
       USER_META_KEYS.profileIcon,
       userId,
     ]);
@@ -296,6 +299,7 @@ const getProfile = async (req, res) => {
         joining_date: profile.joining_date || null,
         bio_max_id: profile.bio_max_id || null,
         birthday_date: profile.birthday_date || null,
+        designation: profile.designation || null,
         profile_icon: profileIcon,
         leader_name: leaderName,
         lwp_total_days_taken: lwpTotalDaysTaken,
@@ -368,7 +372,7 @@ const updateProfile = async (req, res) => {
       return res.status(401).json({ error: 'Authentication required.' });
     }
 
-    const { email, display_name, joining_date, birthday_date, bio_max_id, profile_icon, profile_icon_base64, profile_icon_url } = req.body || {};
+    const { email, display_name, joining_date, birthday_date, bio_max_id, designation, profile_icon, profile_icon_base64, profile_icon_url } = req.body || {};
     const updates = [];
     let resolvedProfileIconValue = profile_icon;
 
@@ -413,6 +417,7 @@ const updateProfile = async (req, res) => {
       { key: USER_META_KEYS.joiningDate, value: joining_date },
       { key: USER_META_KEYS.birthdayDate, value: birthday_date },
       { key: USER_META_KEYS.bioMaxId, value: bio_max_id },
+      { key: USER_META_KEYS.designation, value: designation },
       { key: USER_META_KEYS.profileIcon, value: resolvedProfileIconValue },
     ];
 
@@ -445,6 +450,7 @@ const updateProfile = async (req, res) => {
         (SELECT meta_value FROM wp_usermeta WHERE user_id = u.ID AND meta_key = ? LIMIT 1) AS joining_date,
         (SELECT meta_value FROM wp_usermeta WHERE user_id = u.ID AND meta_key = ? LIMIT 1) AS bio_max_id,
         (SELECT meta_value FROM wp_usermeta WHERE user_id = u.ID AND meta_key = ? LIMIT 1) AS birthday_date,
+        (SELECT meta_value FROM wp_usermeta WHERE user_id = u.ID AND meta_key = ? LIMIT 1) AS designation,
         (SELECT meta_value FROM wp_usermeta WHERE user_id = u.ID AND meta_key = ? LIMIT 1) AS profile_icon
       FROM wp_users u
       WHERE u.ID = ?
@@ -453,6 +459,7 @@ const updateProfile = async (req, res) => {
         USER_META_KEYS.joiningDate,
         USER_META_KEYS.bioMaxId,
         USER_META_KEYS.birthdayDate,
+        USER_META_KEYS.designation,
         USER_META_KEYS.profileIcon,
         userId,
       ]
@@ -475,6 +482,7 @@ const updateProfile = async (req, res) => {
         joining_date: profile.joining_date || null,
         bio_max_id: profile.bio_max_id || null,
         birthday_date: profile.birthday_date || null,
+        designation: profile.designation || null,
         profile_icon: profileIcon,
         duration,
       },

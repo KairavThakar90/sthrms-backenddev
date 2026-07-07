@@ -17,8 +17,17 @@ router.get('/balances', leaveController.getLeaveBalances);
 // 2. Configure leave balance (administrator & hr only)
 router.post('/balances', authorize(['administrator', 'hr']), leaveController.configureLeaveBalance);
 
+// 2b. Get current policy document URL
+router.get('/policy-document', leaveController.getCurrentPolicyDocument);
+
 // 3. Apply for leave (everyone can access)
 router.post('/', leaveController.applyLeave);
+
+// 3b. Update an existing leave request (owner only while still pending/reviewable)
+router.put('/:id', leaveController.updateLeave);
+
+// 3c. Cancel an existing leave request (owner only while still pending/reviewable)
+router.put('/:id/cancel', leaveController.cancelLeave);
 
 // 4. Get leave dashboard reports (everyone; role-based filtering inside controller)
 router.get('/report', leaveController.getLeavesReport);

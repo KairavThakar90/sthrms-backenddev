@@ -75,6 +75,45 @@
               "response": []
             },
             {
+              "name": "Get Leave Balances for Specific Employee",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{jwtToken}}",
+                    "description": "JWT token of an Admin, HR, or Leader user. Admin/HR can view any employee; Leaders can view their direct reports.",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/leaves/balances?year=2026&employee_id=5",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "leaves",
+                    "balances"
+                  ],
+                  "query": [
+                    {
+                      "key": "year",
+                      "value": "2026",
+                      "description": "Year to fetch balances for"
+                    },
+                    {
+                      "key": "employee_id",
+                      "value": "5",
+                      "description": "Employee ID to inspect"
+                    }
+                  ]
+                },
+                "description": "Fetch leave balances for a specific employee. Admin/HR can view any employee. Leaders can view their direct reports only."
+              },
+              "response": []
+            },
+            {
               "name": "Configure Leave Balance (Admin/HR Only)",
               "request": {
                 "method": "POST",
@@ -237,6 +276,75 @@
                   ]
                 },
                 "description": "Apply for Early Leave as a fixed 2-hour request (0.25 day). Use `day_type: \"full_day\"` only, do not send a half-day period, and provide `compensate_date` within the same week or the following week of the leave date. Only one Early Leave is allowed per month."
+              },
+              "response": []
+            },
+            {
+              "name": "Cancel Leave Request",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{jwtToken}}",
+                    "description": "JWT token of the employee who owns the leave request.",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/leaves/1/cancel",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "leaves",
+                    "1",
+                    "cancel"
+                  ]
+                },
+                "description": "Cancel a pending or partially approved leave request owned by the authenticated employee. The request status is updated to cancelled."
+              },
+              "response": []
+            },
+            {
+              "name": "Update Leave Request",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{jwtToken}}",
+                    "description": "JWT token of the employee who owns the leave request.",
+                    "type": "text"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json",
+                    "type": "text"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"leave_type\": \"CL\",\n  \"start_date\": \"2026-07-06\",\n  \"end_date\": \"2026-07-07\",\n  \"reason\": \"Updated reason for leave\",\n  \"day_type\": \"full_day\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/leaves/1",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "leaves",
+                    "1"
+                  ]
+                },
+                "description": "Update an existing leave request. The owner can change leave type, date range, and reason. The backend recalculates the duration and sends the request for re-review."
               },
               "response": []
             }
@@ -533,6 +641,39 @@
               ]
             },
             "description": "Fetch the authenticated user's profile details including email, joining date, bio max id, birthday date, profile icon attachment, and calculated tenure duration."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Profile for Specific User",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "description": "JWT token of an Admin, HR, or Leader user.",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/profile?user_id=5",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "profile"
+              ],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "5",
+                  "description": "User ID to fetch profile for"
+                }
+              ]
+            },
+            "description": "Fetch the profile for a specific user. Admin/HR can view any profile. Leaders can view their direct reports' profiles."
           },
           "response": []
         },

@@ -225,6 +225,44 @@ const notifyEmployeeRequestReceived = async (employeeEmail, employeeName, leave)
 };
 
 /**
+ * Notify Employee that their leave request was updated and is pending review.
+ */
+const notifyEmployeeLeaveUpdated = async (employeeEmail, employeeName, leave) => {
+  const subject = `Leave Request Updated: ${leave.leave_type_full || leave.leave_type}`;
+  const statusBadge = `<span class="badge badge-pending">Updated - Pending Review</span>`;
+
+  const content = `
+    <p>Hello ${employeeName},</p>
+    <p>Your leave request has been updated successfully and is now pending re-review.</p>
+
+    <table class="details-table">
+      <tr>
+        <td class="label">Leave Type</td>
+        <td>${leave.leave_type_full || leave.leave_type}</td>
+      </tr>
+      <tr>
+        <td class="label">Duration</td>
+        <td>${getDurationText(leave)}</td>
+      </tr>
+      <tr>
+        <td class="label">Reason</td>
+        <td>${leave.reason}</td>
+      </tr>
+      <tr>
+        <td class="label">Status</td>
+        <td>${statusBadge}</td>
+      </tr>
+    </table>
+
+    <p>Your updated request will be reviewed again by the relevant approver.</p>
+    <p>Thank you,</p>
+    <p><strong>ST HRMS Leave Management System</strong></p>
+  `;
+
+  return sendEmail(employeeEmail, subject, getHtmlTemplate('Leave Request Updated', content));
+};
+
+/**
  * Notify HR that a new leave request has been submitted and is awaiting review.
  */
 const notifyHRNewLeaveRequest = async (hrEmail, employeeName, leaderName, leave) => {
@@ -269,6 +307,42 @@ const notifyHRNewLeaveRequest = async (hrEmail, employeeName, leaderName, leave)
 };
 
 /**
+ * Notify Leader that their direct report updated a leave request (Level 1 Review Required).
+ */
+const notifyLeaderLeaveUpdated = async (leaderEmail, employeeName, leave) => {
+  const subject = `Leave Update Needed: ${employeeName}`;
+  const statusBadge = `<span class="badge badge-pending">Updated - Pending Leader Approval</span>`;
+
+  const content = `
+    <p>Hello,</p>
+    <p><strong>${employeeName}</strong> has updated their leave request and it is awaiting your review.</p>
+
+    <table class="details-table">
+      <tr>
+        <td class="label">Leave Type</td>
+        <td>${leave.leave_type_full || leave.leave_type}</td>
+      </tr>
+      <tr>
+        <td class="label">Duration</td>
+        <td>${getDurationText(leave)}</td>
+      </tr>
+      <tr>
+        <td class="label">Reason</td>
+        <td>${leave.reason}</td>
+      </tr>
+      <tr>
+        <td class="label">Status</td>
+        <td>${statusBadge}</td>
+      </tr>
+    </table>
+
+    <p>Please review the updated request in the HRMS dashboard.</p>
+  `;
+
+  return sendEmail(leaderEmail, subject, getHtmlTemplate('Leave Request Updated', content));
+};
+
+/**
  * Notify Leader that their direct report applied for leave (Level 1 Review Required).
  */
 const notifyLeaderForApproval = async (leaderEmail, employeeName, leave) => {
@@ -309,6 +383,50 @@ const notifyLeaderForApproval = async (leaderEmail, employeeName, leave) => {
   `;
   
   return sendEmail(leaderEmail, subject, getHtmlTemplate('Leave Request Pending Approval', content));
+};
+
+/**
+ * Notify HR that an updated leave request is awaiting review.
+ */
+const notifyHRLeaveUpdated = async (hrEmail, employeeName, leaderName, leave) => {
+  const subject = `Updated Leave Request: ${employeeName}`;
+  const statusBadge = `<span class="badge badge-pending">Updated - Pending Review</span>`;
+
+  const content = `
+    <p>Hello HR Team,</p>
+    <p><strong>${employeeName}</strong> has updated a leave request and it is now pending review.</p>
+
+    <table class="details-table">
+      <tr>
+        <td class="label">Employee</td>
+        <td>${employeeName}</td>
+      </tr>
+      <tr>
+        <td class="label">Leave Type</td>
+        <td>${leave.leave_type_full || leave.leave_type}</td>
+      </tr>
+      <tr>
+        <td class="label">Duration</td>
+        <td>${getDurationText(leave)}</td>
+      </tr>
+      <tr>
+        <td class="label">Reason</td>
+        <td>${leave.reason}</td>
+      </tr>
+      <tr>
+        <td class="label">Assigned Leader</td>
+        <td>${leaderName || 'Not assigned yet'}</td>
+      </tr>
+      <tr>
+        <td class="label">Status</td>
+        <td>${statusBadge}</td>
+      </tr>
+    </table>
+
+    <p>Please review the updated request in the HRMS dashboard.</p>
+  `;
+
+  return sendEmail(hrEmail, subject, getHtmlTemplate('Leave Request Updated', content));
 };
 
 /**
@@ -431,8 +549,11 @@ const notifyEmployeeStatus = async (employeeEmail, employeeName, leave, finalSta
 module.exports = {
   buildActionLink,
   notifyEmployeeRequestReceived,
+  notifyEmployeeLeaveUpdated,
   notifyHRNewLeaveRequest,
   notifyLeaderForApproval,
+  notifyLeaderLeaveUpdated,
   notifyHRForApproval,
+  notifyHRLeaveUpdated,
   notifyEmployeeStatus
 };

@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS `wp_hrms_leaves` (
   `hr_rejection_reason` TEXT DEFAULT NULL,
   
   -- Overall Status
-  `status` ENUM('pending', 'approved', 'rejected', 'partially_approved') DEFAULT 'pending',
+  `status` ENUM('pending', 'approved', 'rejected', 'partially_approved', 'cancelled') DEFAULT 'pending',
   
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
