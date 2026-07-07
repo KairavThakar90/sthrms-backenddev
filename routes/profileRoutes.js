@@ -42,6 +42,7 @@ const upload = multer({
   },
 });
 
+router.get('/:id', authenticate, getProfile);
 router.get('/', authenticate, getProfile);
 router.put('/', authenticate, upload.single('profile_icon_file'), updateProfile);
 

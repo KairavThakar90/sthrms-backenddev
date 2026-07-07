@@ -11,6 +11,7 @@ router.get('/:id/action', authenticateOrRedirect, leaveController.handleActionLi
 router.use(authenticate);
 
 // 1. Get leave balances (everyone can access; restriction checks inside the controller)
+router.get('/balances/:employee_id', leaveController.getLeaveBalances);
 router.get('/balances', leaveController.getLeaveBalances);
 
 // 2. Configure leave balance (administrator & hr only)

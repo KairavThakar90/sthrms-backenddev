@@ -1,8 +1,10 @@
 // controllers/leaveController.js
 const pool = require('../config/database');
 const emailService = require('../services/emailService');
+const { canAccessTargetUser } = require('../middlewares/auth');
 
 const SPECIAL_BALANCE_FREE_LEAVE_TYPES = ['LWP'];
+const LWP_TOTAL_DAYS_META_KEY = 'lwp_total_days_taken';
 const LEAVE_TYPE_FULL_NAME_MAP = {
   LWP: 'Leave Without Pay',
   HB: 'Birthday Leave',
@@ -37,6 +39,38 @@ const getUserMetaValue = async (userId, metaKey) => {
   const query = `SELECT meta_value FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1`;
   const [rows] = await pool.query(query, [userId, metaKey]);
   return rows[0] ? rows[0].meta_value : null;
+};
+
+const getNumericUserMetaValue = async (userId, metaKey, defaultValue = 0) => {
+  const value = await getUserMetaValue(userId, metaKey);
+  if (value === null || value === undefined || value === '') {
+    return defaultValue;
+  }
+
+  const parsedValue = parseFloat(value);
+  return Number.isNaN(parsedValue) ? defaultValue : parsedValue;
+};
+
+const addToNumericUserMetaValue = async (userId, metaKey, incrementBy = 0, connection = pool) => {
+  if (!userId || incrementBy <= 0) {
+    return getNumericUserMetaValue(userId, metaKey, 0);
+  }
+
+  const [existingRows] = await connection.query(
+    'SELECT meta_id, meta_value FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1',
+    [userId, metaKey]
+  );
+
+  const currentValue = existingRows.length > 0 ? parseFloat(existingRows[0].meta_value || 0) : 0;
+  const nextValue = (Number.isNaN(currentValue) ? 0 : currentValue) + incrementBy;
+
+  if (existingRows.length > 0) {
+    await connection.query('UPDATE wp_usermeta SET meta_value = ? WHERE meta_id = ?', [String(nextValue), existingRows[0].meta_id]);
+  } else {
+    await connection.query('INSERT INTO wp_usermeta (user_id, meta_key, meta_value) VALUES (?, ?, ?)', [userId, metaKey, String(nextValue)]);
+  }
+
+  return nextValue;
 };
 
 const getWordPressUserRole = async (userId) => {
@@ -831,24 +865,20 @@ exports.getLeaveBalances = async (req, res) => {
   try {
     const requester = req.user;
     const year = req.query.year ? parseInt(req.query.year, 10) : new Date().getFullYear();
-    let targetEmployeeId = req.query.employee_id ? parseInt(req.query.employee_id, 10) : requester.id;
+    const requestedEmployeeId = req.params?.employee_id || req.query?.employee_id || req.query?.user_id || req.params?.id;
+    let targetEmployeeId = requestedEmployeeId ? parseInt(requestedEmployeeId, 10) : requester.id;
 
-    // Access Control Validation
+    if (Number.isNaN(targetEmployeeId)) {
+      targetEmployeeId = requester.id;
+    }
+
     if (targetEmployeeId !== requester.id) {
-      // administrator and hr can see anyone's balance
-      if (requester.role !== 'administrator' && requester.role !== 'hr') {
-        // leader AND buddy can see their direct reports' balances
-        if (requester.role === 'leader' || requester.role === 'buddy') {
-          const reportsToQuery = `SELECT meta_value FROM wp_usermeta WHERE user_id = ? AND meta_key = 'st_reports_to'`;
-          const [metaRows] = await pool.query(reportsToQuery, [targetEmployeeId]);
-          
-          const managerId = metaRows[0] ? parseInt(metaRows[0].meta_value, 10) : null;
-          if (managerId !== requester.id) {
-            return res.status(403).json({ error: 'Access denied: You can only view your own or your direct reports\' balances.' });
-          }
-        } else {
-          return res.status(403).json({ error: 'Access denied: You do not have permission to view other users\' balances.' });
-        }
+      const reportsToQuery = `SELECT meta_value FROM wp_usermeta WHERE user_id = ? AND meta_key = 'st_reports_to'`;
+      const [metaRows] = await pool.query(reportsToQuery, [targetEmployeeId]);
+      const managerId = metaRows[0] ? parseInt(metaRows[0].meta_value, 10) : null;
+
+      if (!canAccessTargetUser(requester, targetEmployeeId, managerId)) {
+        return res.status(403).json({ error: 'Access denied: You can only view your own or your direct reports\' balances.' });
       }
     }
 
@@ -909,6 +939,8 @@ exports.getLeaveBalances = async (req, res) => {
       balanceJson = (await getOrCreateLeaveBalanceRow(targetEmployeeId, year)).balanceJson;
     }
 
+    const lwpTotalDaysTaken = await getNumericUserMetaValue(targetEmployeeId, LWP_TOTAL_DAYS_META_KEY, 0);
+
     const balances = Object.keys(balanceJson).map((leaveType) => {
       const entry = balanceJson[leaveType];
       const balanceRow = {
@@ -928,6 +960,7 @@ exports.getLeaveBalances = async (req, res) => {
     res.json({
       employee_id: targetEmployeeId,
       year: year,
+      lwp_total_days_taken: lwpTotalDaysTaken,
       balances: balances
     });
   } catch (err) {
@@ -1668,6 +1701,19 @@ exports.approveHR = async (req, res) => {
       updatedClDaysCharged,
       leaveId
     ]);
+
+    let lwpDaysToRecord = 0;
+    if (status === 'approved') {
+      if (leave.leave_type === 'LWP') {
+        lwpDaysToRecord = parseFloat(leave.leave_days || 0);
+      } else if (updatedExtraLwpDays > 0) {
+        lwpDaysToRecord = updatedExtraLwpDays;
+      }
+
+      if (lwpDaysToRecord > 0) {
+        await addToNumericUserMetaValue(leave.employee_id, LWP_TOTAL_DAYS_META_KEY, lwpDaysToRecord, connection);
+      }
+    }
 
     // Commit changes
     await connection.commit();

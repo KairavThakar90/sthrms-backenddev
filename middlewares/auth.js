@@ -42,7 +42,11 @@ function getUserIdFromToken(authHeader) {
   // 5. Verify signature AND expiry — map specific error types to clear messages
   let decoded;
   try {
-    decoded = jwt.verify(token, secretKey, { algorithms: ['HS256'] });
+    decoded = jwt.verify(token, secretKey, {
+      algorithms: ['HS256'],
+      clockTolerance: 300,
+      ignoreNotBefore: true,
+    });
   } catch (err) {
     if (err.name === 'TokenExpiredError') {
       return { status_code: 401, message: 'Token has expired. Please refresh your token.' };
@@ -176,6 +180,34 @@ const authorize = (allowedRoles) => {
   };
 };
 
+const canAccessTargetUser = (requester, targetUserId, reportsToUserId = null) => {
+  if (!requester || !targetUserId) {
+    return false;
+  }
+
+  const requesterId = parseInt(requester.id, 10);
+  const normalizedTargetUserId = parseInt(targetUserId, 10);
+  const normalizedReportsToUserId = parseInt(reportsToUserId, 10);
+
+  if (Number.isNaN(requesterId) || Number.isNaN(normalizedTargetUserId)) {
+    return false;
+  }
+
+  if (normalizedTargetUserId === requesterId) {
+    return true;
+  }
+
+  if (requester.role === 'administrator' || requester.role === 'hr') {
+    return true;
+  }
+
+  if (requester.role === 'leader' || requester.role === 'buddy') {
+    return normalizedReportsToUserId === requesterId;
+  }
+
+  return false;
+};
+
 const authenticateOrRedirect = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -241,4 +273,4 @@ const authenticateOrRedirect = async (req, res, next) => {
   }
 };
 
-module.exports = { authenticate, authorize, authenticateOrRedirect };
+module.exports = { authenticate, authorize, authenticateOrRedirect, canAccessTargetUser, getUserIdFromToken };

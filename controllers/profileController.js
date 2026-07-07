@@ -3,6 +3,8 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const pool = require('../config/database');
+const { canAccessTargetUser } = require('../middlewares/auth');
+const LWP_TOTAL_DAYS_META_KEY = 'lwp_total_days_taken';
 
 const USER_META_KEYS = {
   joiningDate: 'joining_date',
@@ -227,10 +229,26 @@ const findLeaderNameInHierarchy = async (employeeId, maxDepth = 10) => {
 
 const getProfile = async (req, res) => {
   try {
-    const userId = req.user?.id;
+    const requester = req.user;
+    const requestedUserId = req.params?.userId || req.params?.id || req.query?.user_id || req.query?.employee_id || req.query?.id;
+    const userId = requestedUserId ? parseInt(requestedUserId, 10) : requester?.id;
 
-    if (!userId) {
+    if (!requester?.id) {
       return res.status(401).json({ error: 'Authentication required.' });
+    }
+
+    if (Number.isNaN(userId)) {
+      return res.status(400).json({ error: 'A valid user ID is required.' });
+    }
+
+    if (userId !== requester.id) {
+      const reportsToQuery = `SELECT meta_value FROM wp_usermeta WHERE user_id = ? AND meta_key = 'st_reports_to'`;
+      const [metaRows] = await pool.query(reportsToQuery, [userId]);
+      const managerId = metaRows[0] ? parseInt(metaRows[0].meta_value, 10) : null;
+
+      if (!canAccessTargetUser(requester, userId, managerId)) {
+        return res.status(403).json({ error: 'Access denied: You can only view your own or your direct reports\' profile.' });
+      }
     }
 
     const query = `
@@ -262,10 +280,17 @@ const getProfile = async (req, res) => {
     const duration = calculateDuration(profile.joining_date);
     const profileIcon = await buildProfileIconData(profile.profile_icon);
     const leaderName = await findLeaderNameInHierarchy(userId);
+    const lwpTotalDaysTaken = await (async () => {
+      const [metaRows] = await pool.query('SELECT meta_value FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1', [userId, LWP_TOTAL_DAYS_META_KEY]);
+      const value = metaRows[0] ? metaRows[0].meta_value : null;
+      const parsed = parseFloat(value);
+      return Number.isNaN(parsed) ? 0 : parsed;
+    })();
 
     return res.json({
       success: true,
       data: {
+        user_id: userId,
         email: profile.user_email || req.user?.email || null,
         display_name: profile.display_name || req.user?.name || null,
         joining_date: profile.joining_date || null,
@@ -273,6 +298,7 @@ const getProfile = async (req, res) => {
         birthday_date: profile.birthday_date || null,
         profile_icon: profileIcon,
         leader_name: leaderName,
+        lwp_total_days_taken: lwpTotalDaysTaken,
         duration,
       },
     });
