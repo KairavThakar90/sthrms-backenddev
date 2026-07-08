@@ -1,6 +1,6 @@
 const pool = require('../config/database');
 
-const VALID_FEEDBACK_TYPES = ['like', 'dislike', 'newteal'];
+const VALID_FEEDBACK_TYPES = ['like', 'dislike', 'neutral'];
 
 const createFeedback = async (req, res) => {
   try {
