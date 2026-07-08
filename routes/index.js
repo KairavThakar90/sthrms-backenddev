@@ -11,12 +11,28 @@ try {
   const leaveController = require('../controllers/leaveController');
   const documentController = require('../controllers/documentController');
 
-  const uploadTempDir = path.join(__dirname, '../uploads/temp');
-  fs.mkdirSync(uploadTempDir, { recursive: true });
+  // Use /tmp for Vercel serverless, fallback to local uploads/temp for local development
+  const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME;
+  const uploadTempDir = isServerless 
+    ? '/tmp/uploads'
+    : path.join(__dirname, '../uploads/temp');
+
+  // Try to create directory, but don't crash if it fails (e.g., in read-only environments)
+  try {
+    fs.mkdirSync(uploadTempDir, { recursive: true });
+    console.log(`[Routes] Upload temp directory created: ${uploadTempDir}`);
+  } catch (dirError) {
+    console.warn(`[Routes] Could not create upload temp directory: ${dirError.message}`);
+    // Continue anyway - multer will handle the error when upload is attempted
+  }
 
   const upload = multer({
     dest: uploadTempDir,
     limits: { fileSize: 5 * 1024 * 1024 },
+    onError: (err, next) => {
+      console.error('[Multer Error]', err);
+      next(err);
+    }
   });
 
   router.get('/policy-document', leaveController.getCurrentPolicyDocument);
