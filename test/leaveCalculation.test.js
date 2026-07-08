@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { calculateLeaveDayBreakdown } = require('../controllers/leaveController');
+const { calculateLeaveDayBreakdown, normalizeLeaveType, isSpecialBalanceFreeLeaveType } = require('../controllers/leaveController');
 
 test('SL leave ignores sandwich-rule behavior and counts only working days', () => {
   const result = calculateLeaveDayBreakdown('2026-07-03', '2026-07-06', 'SL');
@@ -20,4 +20,11 @@ test('non-SL leave keeps the existing sandwich-rule breakdown', () => {
     paidDays: 2,
     lwpDays: 2,
   });
+});
+
+test('LWP leave types are normalized as balance-free leave types', () => {
+  assert.equal(normalizeLeaveType('Leave Without Pay'), 'LWP');
+  assert.equal(normalizeLeaveType('lwp'), 'LWP');
+  assert.equal(isSpecialBalanceFreeLeaveType('Leave Without Pay'), true);
+  assert.equal(isSpecialBalanceFreeLeaveType('CL'), false);
 });

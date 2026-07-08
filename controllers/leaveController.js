@@ -27,6 +27,11 @@ const normalizeLeaveType = (leaveType) => {
   return specialMapping[upper] || upper;
 };
 
+const isSpecialBalanceFreeLeaveType = (leaveType) => {
+  const normalizedLeaveType = normalizeLeaveType(leaveType);
+  return SPECIAL_BALANCE_FREE_LEAVE_TYPES.includes(normalizedLeaveType);
+};
+
 const isWeekendDate = (dateValue) => {
   const date = new Date(dateValue);
   if (Number.isNaN(date.getTime())) {
@@ -235,7 +240,7 @@ const getLeaveEntryRemaining = (entry, leaveType) => {
   if (!entry) {
     return null;
   }
-  if (leaveType === 'LWP') {
+  if (isSpecialBalanceFreeLeaveType(leaveType)) {
     return null;
   }
   return parseFloat(entry.total_allotted || 0) - parseFloat(entry.used || 0);
@@ -645,6 +650,8 @@ const verifyActionToken = (token) => {
 exports.hasDateRangeOverlap = hasDateRangeOverlap;
 exports.countLeaveDaysForRange = countLeaveDaysForRange;
 exports.isSandwichRuleRange = isSandwichRuleRange;
+exports.normalizeLeaveType = normalizeLeaveType;
+exports.isSpecialBalanceFreeLeaveType = isSpecialBalanceFreeLeaveType;
 exports.calculateSandwichLeaveSplit = calculateSandwichLeaveSplit;
 exports.calculateLeaveDayBreakdown = calculateLeaveDayBreakdown;
 exports.getUpcomingBirthdayDate = getUpcomingBirthdayDate;
@@ -756,6 +763,7 @@ exports.handleActionLink = async (req, res) => {
         }
 
         const leaveRec = leaveRows[0];
+        const normalizedLeaveType = normalizeLeaveType(leaveRec.leave_type);
         const requestedDays = parseFloat(leaveRec.leave_days);
         const leaveYear = new Date(leaveRec.start_date).getFullYear();
 
@@ -774,8 +782,8 @@ exports.handleActionLink = async (req, res) => {
         let updatedExtraLwpDays = parseFloat(leaveRec.extra_lwp_days || 0);
 
         if (decision === 'approved') {
-          if (leaveRec.leave_type === CL_TYPE) {
-            const entry = balanceRowJson[leaveRec.leave_type];
+          if (normalizedLeaveType === CL_TYPE) {
+            const entry = balanceRowJson[normalizedLeaveType];
             if (!entry) {
               await connection.rollback();
               return res.status(400).send('No leave balance entry for this leave type');
@@ -788,8 +796,8 @@ exports.handleActionLink = async (req, res) => {
             entry.used = parseFloat(entry.used || 0) + updatedClDaysCharged;
             entry.monthly_available = Math.max(0, parseFloat(entry.monthly_available || 0) - updatedClDaysCharged);
             balanceRowJson[leaveRec.leave_type] = entry;
-          } else if (leaveRec.leave_type !== 'LWP') {
-            const entry = balanceRowJson[leaveRec.leave_type];
+          } else if (!isSpecialBalanceFreeLeaveType(normalizedLeaveType)) {
+            const entry = balanceRowJson[normalizedLeaveType];
             if (!entry) {
               await connection.rollback();
               return res.status(400).send('No leave balance entry for this leave type');
@@ -2063,6 +2071,7 @@ exports.approveHR = async (req, res) => {
     }
 
     const leave = rows[0];
+    const normalizedLeaveType = normalizeLeaveType(leave.leave_type);
     const employeeRole = await getWordPressUserRole(leave.employee_id);
     const requireAdministratorOnlyApproval = shouldRequireAdministratorOnlyApproval(employeeRole);
 
@@ -2093,7 +2102,7 @@ exports.approveHR = async (req, res) => {
 
     if (status === 'approved') {
       // 1. Deduct leave balance (skip for LWP as it's unlimited)
-      if (leave.leave_type !== 'LWP') {
+      if (!isSpecialBalanceFreeLeaveType(normalizedLeaveType)) {
         // Double check current balance inside transaction
         const balanceQuery = `
           SELECT balance_json FROM wp_hrms_leave_balances 
@@ -2110,18 +2119,18 @@ exports.approveHR = async (req, res) => {
         }
 
         const balanceRowJson = parseBalanceJson(balanceRows[0].balance_json);
-        const entry = balanceRowJson[leave.leave_type];
+        const entry = balanceRowJson[normalizedLeaveType];
         if (!entry) {
           await connection.rollback();
           return res.status(400).json({ 
-            error: `No leave balance configured for leave type '${leave.leave_type}' in year ${leaveYear}.` 
+            error: `No leave balance configured for leave type '${normalizedLeaveType}' in year ${leaveYear}.` 
           });
         }
 
-        if (leave.leave_type === CL_TYPE) {
+        if (normalizedLeaveType === CL_TYPE) {
           const clDaysCharged = parseFloat(leave.cl_days_charged || 0);
           if (clDaysCharged > 0) {
-            const remaining = getLeaveEntryRemaining(entry, leave.leave_type);
+            const remaining = getLeaveEntryRemaining(entry, normalizedLeaveType);
             const clToUse = Math.min(remaining, clDaysCharged);
             const lwpFromCl = clDaysCharged - clToUse;
 
@@ -2132,16 +2141,16 @@ exports.approveHR = async (req, res) => {
 
             updatedClDaysCharged = clToUse;
             updatedExtraLwpDays = parseFloat(updatedExtraLwpDays || 0) + lwpFromCl;
-            balanceRowJson[leave.leave_type] = entry;
+            balanceRowJson[normalizedLeaveType] = entry;
           }
         } else {
-          const remaining = getLeaveEntryRemaining(entry, leave.leave_type);
+          const remaining = getLeaveEntryRemaining(entry, normalizedLeaveType);
           const paidDays = Math.min(remaining, requestedDays);
           const lwpDays = requestedDays - paidDays;
 
           if (paidDays > 0) {
             entry.used = parseFloat(entry.used || 0) + paidDays;
-            balanceRowJson[leave.leave_type] = entry;
+            balanceRowJson[normalizedLeaveType] = entry;
           }
 
           updatedExtraLwpDays = parseFloat(updatedExtraLwpDays || 0) + lwpDays;
@@ -2175,7 +2184,7 @@ exports.approveHR = async (req, res) => {
 
     let lwpDaysToRecord = 0;
     if (status === 'approved') {
-      if (leave.leave_type === 'LWP') {
+      if (normalizedLeaveType === 'LWP') {
         lwpDaysToRecord = parseFloat(leave.leave_days || 0);
       } else if (updatedExtraLwpDays > 0) {
         lwpDaysToRecord = updatedExtraLwpDays;
