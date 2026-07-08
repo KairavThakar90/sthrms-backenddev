@@ -2177,17 +2177,25 @@ exports.approveHR = async (req, res) => {
     await connection.commit();
 
     // 3. Notify administrator of the final HR decision for all leave request types
-    if (shouldNotifyAdministratorForFinalDecision(status)) {
-      const administratorEmails = await getAdministratorEmails();
-      for (const adminEmail of administratorEmails) {
-        await emailService.notifyHRForApproval(adminEmail, leave.employee_name, leave.employee_name, { ...leaveData, rejection_reason: reason });
+    try {
+      if (shouldNotifyAdministratorForFinalDecision(status)) {
+        const administratorEmails = await getAdministratorEmails();
+        for (const adminEmail of administratorEmails) {
+          await emailService.notifyHRForApproval(adminEmail, leave.employee_name, leave.employee_name, { ...leaveData, rejection_reason: reason });
+        }
       }
+    } catch (emailErr) {
+      console.warn('[approveHR] Administrator notification failed:', emailErr.message);
     }
 
     // 4. Send final confirmation/rejection email to Employee
-    leaveData.extra_lwp_days = updatedExtraLwpDays;
-    leaveData.cl_days_charged = updatedClDaysCharged;
-    await emailService.notifyEmployeeStatus(leave.employee_email, leave.employee_name, leaveData, finalStatus);
+    try {
+      leaveData.extra_lwp_days = updatedExtraLwpDays;
+      leaveData.cl_days_charged = updatedClDaysCharged;
+      await emailService.notifyEmployeeStatus(leave.employee_email, leave.employee_name, leaveData, finalStatus);
+    } catch (emailErr) {
+      console.warn('[approveHR] Employee status notification failed:', emailErr.message);
+    }
 
     res.json({
       message: `HR ${status} leave request successfully.`,
@@ -2197,9 +2205,18 @@ exports.approveHR = async (req, res) => {
       status: finalStatus
     });
   } catch (err) {
-    await connection.rollback();
+    try {
+      await connection.rollback();
+    } catch (rollbackErr) {
+      console.error('approveHR rollback error:', rollbackErr);
+    }
     console.error('approveHR error:', err);
-    res.status(500).json({ error: 'Failed to process HR approval' });
+    console.error('approveHR error stack:', err.stack);
+    res.status(500).json({ 
+      error: 'Failed to process HR approval',
+      details: err.message,
+      code: err.code
+    });
   } finally {
     connection.release();
   }
