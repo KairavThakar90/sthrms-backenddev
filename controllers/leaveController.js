@@ -63,7 +63,7 @@ const addToNumericUserMetaValue = async (userId, metaKey, incrementBy = 0, conne
   }
 
   const [existingRows] = await connection.query(
-    'SELECT meta_id, meta_value FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1',
+    'SELECT umeta_id, meta_value FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1',
     [userId, metaKey]
   );
 
@@ -71,7 +71,7 @@ const addToNumericUserMetaValue = async (userId, metaKey, incrementBy = 0, conne
   const nextValue = (Number.isNaN(currentValue) ? 0 : currentValue) + incrementBy;
 
   if (existingRows.length > 0) {
-    await connection.query('UPDATE wp_usermeta SET meta_value = ? WHERE meta_id = ?', [String(nextValue), existingRows[0].meta_id]);
+    await connection.query('UPDATE wp_usermeta SET meta_value = ? WHERE umeta_id = ?', [String(nextValue), existingRows[0].umeta_id]);
   } else {
     await connection.query('INSERT INTO wp_usermeta (user_id, meta_key, meta_value) VALUES (?, ?, ?)', [userId, metaKey, String(nextValue)]);
   }
