@@ -2079,66 +2079,68 @@ exports.approveHR = async (req, res) => {
     let updatedExtraLwpDays = parseFloat(leave.extra_lwp_days || 0);
 
     if (status === 'approved') {
-      // 1. Deduct leave balance
-      // Double check current balance inside transaction
-      const balanceQuery = `
-        SELECT balance_json FROM wp_hrms_leave_balances 
-        WHERE employee_id = ? AND year = ?
-        FOR UPDATE
-      `;
-      const [balanceRows] = await connection.query(balanceQuery, [leave.employee_id, leaveYear]);
-      
-      if (balanceRows.length === 0) {
-        await connection.rollback();
-        return res.status(400).json({ 
-          error: `No leave balance configured for employee ${leave.employee_id} in year ${leaveYear}.` 
-        });
-      }
+      // 1. Deduct leave balance (skip for LWP as it's unlimited)
+      if (leave.leave_type !== 'LWP') {
+        // Double check current balance inside transaction
+        const balanceQuery = `
+          SELECT balance_json FROM wp_hrms_leave_balances 
+          WHERE employee_id = ? AND year = ?
+          FOR UPDATE
+        `;
+        const [balanceRows] = await connection.query(balanceQuery, [leave.employee_id, leaveYear]);
+        
+        if (balanceRows.length === 0) {
+          await connection.rollback();
+          return res.status(400).json({ 
+            error: `No leave balance configured for employee ${leave.employee_id} in year ${leaveYear}.` 
+          });
+        }
 
-      const balanceRowJson = parseBalanceJson(balanceRows[0].balance_json);
-      const entry = balanceRowJson[leave.leave_type];
-      if (!entry) {
-        await connection.rollback();
-        return res.status(400).json({ 
-          error: `No leave balance configured for leave type '${leave.leave_type}' in year ${leaveYear}.` 
-        });
-      }
+        const balanceRowJson = parseBalanceJson(balanceRows[0].balance_json);
+        const entry = balanceRowJson[leave.leave_type];
+        if (!entry) {
+          await connection.rollback();
+          return res.status(400).json({ 
+            error: `No leave balance configured for leave type '${leave.leave_type}' in year ${leaveYear}.` 
+          });
+        }
 
-      if (leave.leave_type === CL_TYPE) {
-        const clDaysCharged = parseFloat(leave.cl_days_charged || 0);
-        if (clDaysCharged > 0) {
+        if (leave.leave_type === CL_TYPE) {
+          const clDaysCharged = parseFloat(leave.cl_days_charged || 0);
+          if (clDaysCharged > 0) {
+            const remaining = getLeaveEntryRemaining(entry, leave.leave_type);
+            const clToUse = Math.min(remaining, clDaysCharged);
+            const lwpFromCl = clDaysCharged - clToUse;
+
+            if (clToUse > 0) {
+              entry.used = parseFloat(entry.used || 0) + clToUse;
+              entry.monthly_available = Math.max(0, parseFloat(entry.monthly_available || 0) - clToUse);
+            }
+
+            updatedClDaysCharged = clToUse;
+            updatedExtraLwpDays = parseFloat(updatedExtraLwpDays || 0) + lwpFromCl;
+            balanceRowJson[leave.leave_type] = entry;
+          }
+        } else {
           const remaining = getLeaveEntryRemaining(entry, leave.leave_type);
-          const clToUse = Math.min(remaining, clDaysCharged);
-          const lwpFromCl = clDaysCharged - clToUse;
+          const paidDays = Math.min(remaining, requestedDays);
+          const lwpDays = requestedDays - paidDays;
 
-          if (clToUse > 0) {
-            entry.used = parseFloat(entry.used || 0) + clToUse;
-            entry.monthly_available = Math.max(0, parseFloat(entry.monthly_available || 0) - clToUse);
+          if (paidDays > 0) {
+            entry.used = parseFloat(entry.used || 0) + paidDays;
+            balanceRowJson[leave.leave_type] = entry;
           }
 
-          updatedClDaysCharged = clToUse;
-          updatedExtraLwpDays = parseFloat(updatedExtraLwpDays || 0) + lwpFromCl;
-          balanceRowJson[leave.leave_type] = entry;
-        }
-      } else if (leave.leave_type !== 'LWP') {
-        const remaining = getLeaveEntryRemaining(entry, leave.leave_type);
-        const paidDays = Math.min(remaining, requestedDays);
-        const lwpDays = requestedDays - paidDays;
-
-        if (paidDays > 0) {
-          entry.used = parseFloat(entry.used || 0) + paidDays;
-          balanceRowJson[leave.leave_type] = entry;
+          updatedExtraLwpDays = parseFloat(updatedExtraLwpDays || 0) + lwpDays;
         }
 
-        updatedExtraLwpDays = parseFloat(updatedExtraLwpDays || 0) + lwpDays;
+        const updateBalanceQuery = `
+          UPDATE wp_hrms_leave_balances 
+          SET balance_json = ? 
+          WHERE employee_id = ? AND year = ?
+        `;
+        await connection.query(updateBalanceQuery, [JSON.stringify(balanceRowJson), leave.employee_id, leaveYear]);
       }
-
-      const updateBalanceQuery = `
-        UPDATE wp_hrms_leave_balances 
-        SET balance_json = ? 
-        WHERE employee_id = ? AND year = ?
-      `;
-      await connection.query(updateBalanceQuery, [JSON.stringify(balanceRowJson), leave.employee_id, leaveYear]);
     }
 
     // 2. Update leave request approval fields
