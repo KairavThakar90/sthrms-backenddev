@@ -740,8 +740,9 @@ exports.handleActionLink = async (req, res) => {
         return res.status(403).send('Action not authorized for this HR user');
       }
 
-      const connection = await pool.getConnection();
+      let connection;
       try {
+        connection = await pool.getConnection();
         await connection.beginTransaction();
 
         const [leaveRows] = await connection.query(
@@ -829,11 +830,23 @@ exports.handleActionLink = async (req, res) => {
         await emailService.notifyEmployeeStatus(leaveRec.employee_email, leaveRec.employee_name, { ...leaveRec, extra_lwp_days: updatedExtraLwpDays, cl_days_charged: updatedClDaysCharged }, finalStatus);
         return res.send('HR decision recorded and employee notified.');
       } catch (err) {
-        await connection.rollback();
+        if (connection) {
+          try {
+            await connection.rollback();
+          } catch (rbErr) {
+            console.error('handleActionLink HR rollback error', rbErr);
+          }
+        }
         console.error('handleActionLink HR error', err);
         return res.status(500).send('Failed to process HR action');
       } finally {
-        connection.release();
+        if (connection) {
+          try {
+            connection.release();
+          } catch (relErr) {
+            console.error('handleActionLink HR connection release error', relErr);
+          }
+        }
       }
     }
 
@@ -2177,25 +2190,17 @@ exports.approveHR = async (req, res) => {
     await connection.commit();
 
     // 3. Notify administrator of the final HR decision for all leave request types
-    try {
-      if (shouldNotifyAdministratorForFinalDecision(status)) {
-        const administratorEmails = await getAdministratorEmails();
-        for (const adminEmail of administratorEmails) {
-          await emailService.notifyHRForApproval(adminEmail, leave.employee_name, leave.employee_name, { ...leaveData, rejection_reason: reason });
-        }
+    if (shouldNotifyAdministratorForFinalDecision(status)) {
+      const administratorEmails = await getAdministratorEmails();
+      for (const adminEmail of administratorEmails) {
+        await emailService.notifyHRForApproval(adminEmail, leave.employee_name, leave.employee_name, { ...leaveData, rejection_reason: reason });
       }
-    } catch (emailErr) {
-      console.warn('[approveHR] Administrator notification failed:', emailErr.message);
     }
 
     // 4. Send final confirmation/rejection email to Employee
-    try {
-      leaveData.extra_lwp_days = updatedExtraLwpDays;
-      leaveData.cl_days_charged = updatedClDaysCharged;
-      await emailService.notifyEmployeeStatus(leave.employee_email, leave.employee_name, leaveData, finalStatus);
-    } catch (emailErr) {
-      console.warn('[approveHR] Employee status notification failed:', emailErr.message);
-    }
+    leaveData.extra_lwp_days = updatedExtraLwpDays;
+    leaveData.cl_days_charged = updatedClDaysCharged;
+    await emailService.notifyEmployeeStatus(leave.employee_email, leave.employee_name, leaveData, finalStatus);
 
     res.json({
       message: `HR ${status} leave request successfully.`,
@@ -2205,18 +2210,9 @@ exports.approveHR = async (req, res) => {
       status: finalStatus
     });
   } catch (err) {
-    try {
-      await connection.rollback();
-    } catch (rollbackErr) {
-      console.error('approveHR rollback error:', rollbackErr);
-    }
+    await connection.rollback();
     console.error('approveHR error:', err);
-    console.error('approveHR error stack:', err.stack);
-    res.status(500).json({ 
-      error: 'Failed to process HR approval',
-      details: err.message,
-      code: err.code
-    });
+    res.status(500).json({ error: 'Failed to process HR approval' });
   } finally {
     connection.release();
   }
