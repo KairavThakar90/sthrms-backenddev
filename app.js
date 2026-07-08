@@ -20,8 +20,14 @@ app.get('/', (req, res) => {
   res.json({
     name: 'ST HRMS Leave Management API dev',
     version: '1.0.0',
-    status: 'Running'
+    status: 'Running',
+    environment: process.env.NODE_ENV || 'development'
   });
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // API Routes
