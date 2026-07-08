@@ -29,6 +29,128 @@
       ]
     },
     {
+      "name": "Document APIs",
+      "item": [
+        {
+          "name": "Upload Document to WordPress",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "Select a PDF, JPG, PNG, or SVG file"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "upload"
+              ]
+            },
+            "description": "Uploads a document to the WordPress media library via the WordPress upload endpoint and returns the attachment ID and URL."
+          },
+          "response": []
+        },
+        {
+          "name": "Save Document Metadata",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": 83,\n  \"document_type\": \"MS\",\n  \"attachment_id\": 45,\n  \"document_url\": \"https://dev-st-performance.pantheonsite.io/wp-content/uploads/2026/07/CVIN_User_Journey_v3.pdf\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/save",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "save"
+              ]
+            },
+            "description": "Saves the uploaded WordPress attachment metadata into the wp_user_documents table."
+          },
+          "response": []
+        },
+        {
+          "name": "Edit / Replace Document Metadata",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{jwtToken}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": 83,\n  \"document_type\": \"AD\",\n  \"attachment_id\": 46,\n  \"document_url\": \"https://dev-st-performance.pantheonsite.io/wp-content/uploads/2026/07/aadhaar.pdf\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/documents/save",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "documents",
+                "save"
+              ]
+            },
+            "description": "Use this same endpoint when replacing an existing document entry. The new attachment ID and URL will be stored as a fresh record."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Leave APIs",
       "item": [
         {

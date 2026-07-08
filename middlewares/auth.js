@@ -42,11 +42,7 @@ function getUserIdFromToken(authHeader) {
   // 5. Verify signature AND expiry — map specific error types to clear messages
   let decoded;
   try {
-    decoded = jwt.verify(token, secretKey, {
-      algorithms: ['HS256'],
-      clockTolerance: 300,
-      ignoreNotBefore: true,
-    });
+    decoded = jwt.verify(token, secretKey, { algorithms: ['HS256'] });
   } catch (err) {
     if (err.name === 'TokenExpiredError') {
       return { status_code: 401, message: 'Token has expired. Please refresh your token.' };
@@ -83,6 +79,35 @@ function getUserIdFromToken(authHeader) {
     message: 'Token validated successfully.',
   };
 }
+
+const canAccessTargetUser = (requester, targetUserId, managerId = null) => {
+  if (!requester?.id || !targetUserId) {
+    return false;
+  }
+
+  const requesterId = parseInt(requester.id, 10);
+  const targetId = parseInt(targetUserId, 10);
+  const managerIdValue = managerId !== null && managerId !== undefined ? parseInt(managerId, 10) : null;
+
+  if (Number.isNaN(requesterId) || Number.isNaN(targetId)) {
+    return false;
+  }
+
+  if (requesterId === targetId) {
+    return true;
+  }
+
+  const role = requester.role || 'employee';
+  if (['administrator', 'hr'].includes(role)) {
+    return true;
+  }
+
+  if (role === 'leader' && managerIdValue !== null) {
+    return requesterId === managerIdValue;
+  }
+
+  return false;
+};
 
 /**
  * Authentication middleware.
@@ -180,34 +205,6 @@ const authorize = (allowedRoles) => {
   };
 };
 
-const canAccessTargetUser = (requester, targetUserId, reportsToUserId = null) => {
-  if (!requester || !targetUserId) {
-    return false;
-  }
-
-  const requesterId = parseInt(requester.id, 10);
-  const normalizedTargetUserId = parseInt(targetUserId, 10);
-  const normalizedReportsToUserId = parseInt(reportsToUserId, 10);
-
-  if (Number.isNaN(requesterId) || Number.isNaN(normalizedTargetUserId)) {
-    return false;
-  }
-
-  if (normalizedTargetUserId === requesterId) {
-    return true;
-  }
-
-  if (requester.role === 'administrator' || requester.role === 'hr') {
-    return true;
-  }
-
-  if (requester.role === 'leader' || requester.role === 'buddy') {
-    return normalizedReportsToUserId === requesterId;
-  }
-
-  return false;
-};
-
 const authenticateOrRedirect = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -273,4 +270,4 @@ const authenticateOrRedirect = async (req, res, next) => {
   }
 };
 
-module.exports = { authenticate, authorize, authenticateOrRedirect, canAccessTargetUser, getUserIdFromToken };
+module.exports = { authenticate, authorize, authenticateOrRedirect, canAccessTargetUser };

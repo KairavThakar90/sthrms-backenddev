@@ -23,3 +23,7 @@ coverage/
 # Temporary files
 *.tmp
 *.temp
+
+# Postman and migration artifacts
+postman_collection.json
+add_cancelled_status_migration.js

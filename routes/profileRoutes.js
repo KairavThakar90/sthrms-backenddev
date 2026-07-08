@@ -5,7 +5,7 @@ const os = require('os');
 const fs = require('fs');
 const crypto = require('crypto');
 const { authenticate } = require('../middlewares/auth');
-const { getProfile, updateProfile } = require('../controllers/profileController');
+const { getProfile, updateProfile, uploadProfileImage } = require('../controllers/profileController');
 
 const router = express.Router();
 
@@ -44,6 +44,7 @@ const upload = multer({
 
 router.get('/:id', authenticate, getProfile);
 router.get('/', authenticate, getProfile);
+router.post('/upload-image', authenticate, upload.single('profile_icon_file'), uploadProfileImage);
 router.put('/', authenticate, upload.single('profile_icon_file'), updateProfile);
 
 module.exports = router;

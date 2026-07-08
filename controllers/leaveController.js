@@ -2,6 +2,7 @@
 const pool = require('../config/database');
 const emailService = require('../services/emailService');
 const { canAccessTargetUser } = require('../middlewares/auth');
+const { buildLeaveUpdateChangeSummary } = require('../utils/leaveChangeSummary');
 
 const SPECIAL_BALANCE_FREE_LEAVE_TYPES = ['LWP'];
 const LWP_TOTAL_DAYS_META_KEY = 'lwp_total_days_taken';
@@ -320,6 +321,44 @@ const calculateSandwichLeaveSplit = (startDateStr, endDateStr, holidayDates = []
   };
 };
 
+const countWorkingDaysForRange = (startDateStr, endDateStr, holidayDates = []) => {
+  const start = new Date(startDateStr);
+  const end = new Date(endDateStr);
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
+    return 0;
+  }
+
+  const holidaySet = new Set((holidayDates || []).map((dateValue) => formatDateOnly(dateValue)));
+  let count = 0;
+  let current = new Date(start);
+
+  while (current <= end) {
+    const dateKey = formatDateOnly(current);
+    const dayOfWeek = current.getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const isHoliday = holidaySet.has(dateKey);
+
+    if (!isWeekend && !isHoliday) {
+      count += 1;
+    }
+
+    current.setDate(current.getDate() + 1);
+  }
+
+  return Math.max(0, count);
+};
+
+const calculateLeaveDayBreakdown = (startDateStr, endDateStr, leaveType = null, holidayDates = []) => {
+  const normalizedLeaveType = normalizeLeaveType(leaveType);
+  if (normalizedLeaveType === 'SL') {
+    const totalDays = countWorkingDaysForRange(startDateStr, endDateStr, holidayDates);
+    return { totalDays, paidDays: totalDays, lwpDays: 0 };
+  }
+
+  return calculateSandwichLeaveSplit(startDateStr, endDateStr, holidayDates);
+};
+
 const countLeaveDaysForRange = (startDateStr, endDateStr, holidayDates = []) => {
   const start = new Date(startDateStr);
   const end = new Date(endDateStr);
@@ -607,6 +646,7 @@ exports.hasDateRangeOverlap = hasDateRangeOverlap;
 exports.countLeaveDaysForRange = countLeaveDaysForRange;
 exports.isSandwichRuleRange = isSandwichRuleRange;
 exports.calculateSandwichLeaveSplit = calculateSandwichLeaveSplit;
+exports.calculateLeaveDayBreakdown = calculateLeaveDayBreakdown;
 exports.getUpcomingBirthdayDate = getUpcomingBirthdayDate;
 exports.buildInsufficientLeaveBalanceError = buildInsufficientLeaveBalanceError;
 exports.shouldRequireAdministratorOnlyApproval = shouldRequireAdministratorOnlyApproval;
@@ -629,7 +669,7 @@ exports.getCurrentPolicyDocument = async (req, res) => {
       success: true,
       data: {
         year,
-        policy_document: policyDocument,
+        policy_document_url: policyDocument,
       },
     });
   } catch (error) {
@@ -1113,10 +1153,10 @@ exports.updateLeave = async (req, res) => {
       if (start > end) {
         return res.status(400).json({ error: 'Start date cannot be after end date' });
       }
-      const sandwichSplit = calculateSandwichLeaveSplit(start_date, end_date);
-      requestedDays = sandwichSplit.totalDays;
-      requestedPaidDays = sandwichSplit.paidDays;
-      requestedLwpDays = sandwichSplit.lwpDays;
+      const leaveBreakdown = calculateLeaveDayBreakdown(start_date, end_date, canonicalLeaveType);
+      requestedDays = leaveBreakdown.totalDays;
+      requestedPaidDays = leaveBreakdown.paidDays;
+      requestedLwpDays = leaveBreakdown.lwpDays;
 
       if (requestedDays === 0) {
         return res.status(400).json({ error: 'The selected date range contains only weekends/holidays. No leave days required.' });
@@ -1235,6 +1275,14 @@ exports.updateLeave = async (req, res) => {
       const effectiveClAvailable = Math.min(monthlyAvailable, remainingDays);
       cl_days_charged = Math.min(effectivePaidDays, effectiveClAvailable);
       extra_lwp_days = effectiveLwpDays + Math.max(0, effectivePaidDays - cl_days_charged);
+    } else if (matchedLeaveType === 'SL') {
+      const balanceRow = await getOrCreateLeaveBalanceRow(employee.id, startYear);
+      const balanceEntry = balanceRow.balanceJson[matchedLeaveType];
+      const remainingDays = getLeaveEntryRemaining(balanceEntry, matchedLeaveType);
+      const availableDays = Math.max(0, remainingDays || 0);
+      const usedFromSlBalance = Math.min(effectivePaidDays, availableDays);
+      cl_days_charged = usedFromSlBalance;
+      extra_lwp_days = effectiveLwpDays + Math.max(0, effectivePaidDays - usedFromSlBalance);
     } else if (matchedLeaveType !== 'LWP') {
       extra_lwp_days = effectiveLwpDays;
     }
@@ -1285,6 +1333,26 @@ exports.updateLeave = async (req, res) => {
       employee.id,
     ]);
 
+    const previousLeaveSnapshot = {
+      leave_type: existingLeave.leave_type,
+      start_date: existingLeave.start_date,
+      end_date: existingLeave.end_date,
+      reason: existingLeave.reason,
+      day_type: existingLeave.day_type,
+      half_day_period: existingLeave.half_day_period,
+      compensate_date: existingLeave.compensate_date,
+    };
+
+    const changeSummary = buildLeaveUpdateChangeSummary(previousLeaveSnapshot, {
+      leave_type: matchedLeaveType,
+      start_date,
+      end_date,
+      reason,
+      day_type,
+      half_day_period: finalHalfDayPeriod,
+      compensate_date: canonicalLeaveType === 'EL' ? req.body.compensate_date : null,
+    });
+
     const leaveData = {
       id: leaveId,
       leave_type: matchedLeaveType,
@@ -1295,6 +1363,7 @@ exports.updateLeave = async (req, res) => {
       days: requestedDays,
       day_type,
       half_day_period: finalHalfDayPeriod,
+      change_summary: changeSummary,
     };
 
     void emailService.notifyEmployeeLeaveUpdated(employee.email, employee.name, leaveData);
@@ -1447,10 +1516,10 @@ exports.applyLeave = async (req, res) => {
       if (start > end) {
         return res.status(400).json({ error: 'Start date cannot be after end date' });
       }
-      const sandwichSplit = calculateSandwichLeaveSplit(start_date, end_date);
-      requestedDays = sandwichSplit.totalDays;
-      requestedPaidDays = sandwichSplit.paidDays;
-      requestedLwpDays = sandwichSplit.lwpDays;
+      const leaveBreakdown = calculateLeaveDayBreakdown(start_date, end_date, canonicalLeaveType);
+      requestedDays = leaveBreakdown.totalDays;
+      requestedPaidDays = leaveBreakdown.paidDays;
+      requestedLwpDays = leaveBreakdown.lwpDays;
 
       if (requestedDays === 0) {
         return res.status(400).json({ error: 'The selected date range contains only weekends/holidays. No leave days required.' });
@@ -1635,9 +1704,19 @@ exports.applyLeave = async (req, res) => {
           balanceEntry.monthly_available = Math.max(0, parseFloat(balanceEntry.monthly_available || 0) - cl_days_charged);
           balanceJsonRow.balanceJson[matchedLeaveType] = balanceEntry;
         }
+      } else if (matchedLeaveType === 'SL') {
+        const availableDays = Math.max(0, remainingDays || 0);
+        const usedFromSlBalance = Math.min(effectivePaidDays, availableDays);
+        cl_days_charged = usedFromSlBalance;
+        extra_lwp_days = effectiveLwpDays + Math.max(0, effectivePaidDays - usedFromSlBalance);
+
+        if (usedFromSlBalance > 0) {
+          balanceEntry.used = parseFloat(balanceEntry.used || 0) + usedFromSlBalance;
+          balanceJsonRow.balanceJson[matchedLeaveType] = balanceEntry;
+        }
       }
 
-      if (matchedLeaveType !== CL_TYPE) {
+      if (matchedLeaveType !== CL_TYPE && matchedLeaveType !== 'SL') {
         const lwpEntry = balanceJsonRow.balanceJson.LWP || {
           total_allotted: 0.00,
           used: 0.00,

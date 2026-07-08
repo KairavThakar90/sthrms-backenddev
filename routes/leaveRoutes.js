@@ -7,6 +7,9 @@ const { authenticate, authorize, authenticateOrRedirect } = require('../middlewa
 // Public email action endpoint: asks for login if not authenticated, preserves redirect URL
 router.get('/:id/action', authenticateOrRedirect, leaveController.handleActionLink);
 
+// Public policy document endpoint
+router.get('/policy-document', leaveController.getCurrentPolicyDocument);
+
 // All other leave endpoints require user authentication
 router.use(authenticate);
 
@@ -16,9 +19,6 @@ router.get('/balances', leaveController.getLeaveBalances);
 
 // 2. Configure leave balance (administrator & hr only)
 router.post('/balances', authorize(['administrator', 'hr']), leaveController.configureLeaveBalance);
-
-// 2b. Get current policy document URL
-router.get('/policy-document', leaveController.getCurrentPolicyDocument);
 
 // 3. Apply for leave (everyone can access)
 router.post('/', leaveController.applyLeave);

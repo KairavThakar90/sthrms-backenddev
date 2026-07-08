@@ -2,9 +2,13 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const http = require('http');
+const https = require('https');
+const { URL } = require('url');
 const pool = require('../config/database');
 const { canAccessTargetUser } = require('../middlewares/auth');
 const LWP_TOTAL_DAYS_META_KEY = 'lwp_total_days_taken';
+const WORDPRESS_UPLOAD_URL = process.env.WORDPRESS_UPLOAD_URL || 'https://nothing.peakworkos.com';
 
 const USER_META_KEYS = {
   joiningDate: 'joining_date',
@@ -312,56 +316,103 @@ const getProfile = async (req, res) => {
   }
 };
 
-const createWordPressMediaAttachment = async (file, userId) => {
+const uploadFileToWordPress = async (req, file) => {
+  if (!file) {
+    return { ok: false, message: 'No file uploaded.' };
+  }
+
+  const boundary = `----STHRMS${Date.now()}`;
+  const fileBuffer = fs.readFileSync(file.path);
+  const fileName = path.basename(file.originalname || 'profile-icon');
+  const mimeType = file.mimetype || 'image/jpeg';
+  const safeFileName = fileName.replace(/"/g, '\\"');
+
+  const body = Buffer.concat([
+    Buffer.from(`--${boundary}\r\n`),
+    Buffer.from(`Content-Disposition: form-data; name="file"; filename="${safeFileName}"\r\n`),
+    Buffer.from(`Content-Type: ${mimeType}\r\n\r\n`),
+    fileBuffer,
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ]);
+
+  const wordpressUrl = new URL('/wp-json/custom/v1/upload-document', WORDPRESS_UPLOAD_URL);
+  const headers = {
+    'Content-Type': `multipart/form-data; boundary=${boundary}`,
+    'Content-Length': body.length,
+  };
+
+  if (req.headers.authorization) {
+    headers.Authorization = req.headers.authorization;
+  }
+
+  return new Promise((resolve) => {
+    const client = wordpressUrl.protocol === 'https:' ? https : http;
+    const request = client.request(
+      {
+        protocol: wordpressUrl.protocol,
+        hostname: wordpressUrl.hostname,
+        port: wordpressUrl.port || (wordpressUrl.protocol === 'https:' ? 443 : 80),
+        path: `${wordpressUrl.pathname}${wordpressUrl.search}`,
+        method: 'POST',
+        headers,
+      },
+      (response) => {
+        let responseBody = '';
+        response.on('data', (chunk) => {
+          responseBody += chunk.toString();
+        });
+        response.on('end', () => {
+          try {
+            const parsed = JSON.parse(responseBody);
+            if (response.statusCode >= 400 || !parsed?.success) {
+              resolve({ ok: false, message: parsed?.message || 'WordPress upload failed.' });
+              return;
+            }
+
+            resolve({
+              ok: true,
+              attachmentId: parsed?.data?.attachment_id,
+              url: parsed?.data?.url,
+              metadata: parsed?.data,
+            });
+          } catch (error) {
+            resolve({ ok: false, message: 'Invalid WordPress response.' });
+          }
+        });
+      }
+    );
+
+    request.on('error', () => {
+      resolve({ ok: false, message: 'Unable to reach WordPress upload endpoint.' });
+    });
+
+    request.write(body);
+    request.end();
+  });
+};
+
+const createWordPressMediaAttachment = async (req, file, userId) => {
   if (!file) {
     return null;
   }
 
-  const uploadDate = new Date();
-  const postDate = uploadDate.toISOString().slice(0, 19).replace('T', ' ');
-  const title = path.parse(file.originalname || 'profile-icon').name || 'Profile icon';
-  const fileName = file.filename;
-  const storedPath = path.join('uploads', 'profile-icons', fileName).replace(/\\/g, '/');
-  const baseUrl = process.env.APP_BASE_URL || process.env.APP_URL || 'http://localhost:3000';
-  const guid = `${baseUrl.replace(/\/+$/, '')}/${storedPath}`;
-
-  const [result] = await pool.query(
-    `INSERT INTO wp_posts (
-      post_author, post_date, post_date_gmt, post_content, post_title, post_status,
-      comment_status, ping_status, post_name, post_modified, post_modified_gmt,
-      post_parent, guid, post_type, post_mime_type
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      userId,
-      postDate,
-      postDate,
-      '',
-      title,
-      'inherit',
-      'open',
-      'closed',
-      fileName,
-      postDate,
-      postDate,
-      0,
-      guid,
-      'attachment',
-      file.mimetype || 'image/jpeg',
-    ]
-  );
-
-  const attachmentId = result.insertId;
-  const resolvedFilePath = file.path || path.join(process.cwd(), 'uploads', 'profile-icons', fileName);
-  const relativeFilePath = path.posix.join('uploads', 'profile-icons', fileName);
-
-  await pool.query('INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES (?, ?, ?)', [attachmentId, '_wp_attached_file', relativeFilePath]);
-  await pool.query('INSERT INTO wp_postmeta (post_id, meta_key, meta_value) VALUES (?, ?, ?)', [attachmentId, '_wp_attachment_metadata', JSON.stringify({ file: relativeFilePath, width: 0, height: 0, mime_type: file.mimetype || 'image/jpeg' })]);
-
-  if (fs.existsSync(resolvedFilePath)) {
-    await fs.promises.chmod(resolvedFilePath, 0o644);
+  const uploadResult = await uploadFileToWordPress(req, file);
+  if (!uploadResult.ok) {
+    throw new Error(uploadResult.message || 'Failed to upload profile image to WordPress.');
   }
 
-  return attachmentId;
+  return {
+    attachmentId: uploadResult.attachmentId,
+    url: uploadResult.url,
+    metadata: uploadResult.metadata,
+  };
+};
+
+const cleanupTempFile = (file) => {
+  if (!file?.path) return;
+  if (fs.existsSync(file.path)) {
+    fs.unlinkSync(file.path);
+  }
 };
 
 const updateProfile = async (req, res) => {
@@ -387,18 +438,20 @@ const updateProfile = async (req, res) => {
       if (!base64File) {
         return res.status(400).json({ error: 'Unable to parse profile_icon_base64. Ensure it is a valid data URI or base64 string.' });
       }
-      const attachmentId = await createWordPressMediaAttachment(base64File, userId);
-      if (!attachmentId) {
+      const uploadResult = await createWordPressMediaAttachment(req, base64File, userId);
+      if (!uploadResult?.attachmentId) {
         return res.status(500).json({ error: 'Failed to save profile icon image.' });
       }
-      resolvedProfileIconValue = attachmentId;
+      resolvedProfileIconValue = uploadResult.attachmentId;
+      cleanupTempFile(base64File);
     }
 
     if (req.file) {
-      const attachmentId = await createWordPressMediaAttachment(req.file, userId);
-      if (attachmentId) {
-        resolvedProfileIconValue = attachmentId;
+      const uploadResult = await createWordPressMediaAttachment(req, req.file, userId);
+      if (uploadResult?.attachmentId) {
+        resolvedProfileIconValue = uploadResult.attachmentId;
       }
+      cleanupTempFile(req.file);
     }
 
     if (email !== undefined && email !== null && email !== '') {
@@ -493,11 +546,58 @@ const updateProfile = async (req, res) => {
   }
 };
 
+const uploadProfileImage = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required.' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No profile image file uploaded.' });
+    }
+
+    const uploadResult = await createWordPressMediaAttachment(req, req.file, userId);
+    if (!uploadResult?.attachmentId) {
+      return res.status(500).json({ error: 'Failed to upload profile image.' });
+    }
+
+    const normalizedValue = String(uploadResult.attachmentId);
+    const [existingRows] = await pool.query(
+      'SELECT meta_id FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1',
+      [userId, USER_META_KEYS.profileIcon]
+    );
+
+    if (existingRows.length > 0) {
+      await pool.query('UPDATE wp_usermeta SET meta_value = ? WHERE meta_id = ?', [normalizedValue, existingRows[0].meta_id]);
+    } else {
+      await pool.query('INSERT INTO wp_usermeta (user_id, meta_key, meta_value) VALUES (?, ?, ?)', [userId, USER_META_KEYS.profileIcon, normalizedValue]);
+    }
+
+    cleanupTempFile(req.file);
+
+    return res.json({
+      success: true,
+      message: 'Profile image uploaded successfully.',
+      data: {
+        attachment_id: uploadResult.attachmentId,
+        url: uploadResult.url,
+        profile_icon: uploadResult.attachmentId,
+      },
+    });
+  } catch (error) {
+    console.error('[Profile Image] Failed to upload:', error);
+    return res.status(500).json({ error: 'Failed to upload profile image.' });
+  }
+};
+
 module.exports = {
   calculateDuration,
   buildProfileIconData,
   createWordPressMediaAttachment,
   getProfile,
   updateProfile,
+  uploadProfileImage,
   USER_META_KEYS,
 };

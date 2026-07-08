@@ -1,6 +1,7 @@
 // services/emailService.js
 const nodemailer = require('nodemailer');
 const pool = require('../config/database');
+const { buildLeaveUpdateChangeSummary } = require('../utils/leaveChangeSummary');
 require('dotenv').config();
 
 // Create nodemailer transporter
@@ -230,6 +231,10 @@ const notifyEmployeeRequestReceived = async (employeeEmail, employeeName, leave)
 const notifyEmployeeLeaveUpdated = async (employeeEmail, employeeName, leave) => {
   const subject = `Leave Request Updated: ${leave.leave_type_full || leave.leave_type}`;
   const statusBadge = `<span class="badge badge-pending">Updated - Pending Review</span>`;
+  const changeSummary = leave.change_summary || [];
+  const changeRows = changeSummary.length > 0
+    ? changeSummary.map((item) => `<tr><td class="label">Change</td><td>${item}</td></tr>`).join('')
+    : '<tr><td class="label">Change</td><td>No detailed changes were provided.</td></tr>';
 
   const content = `
     <p>Hello ${employeeName},</p>
@@ -252,6 +257,7 @@ const notifyEmployeeLeaveUpdated = async (employeeEmail, employeeName, leave) =>
         <td class="label">Status</td>
         <td>${statusBadge}</td>
       </tr>
+      ${changeRows}
     </table>
 
     <p>Your updated request will be reviewed again by the relevant approver.</p>
@@ -312,6 +318,10 @@ const notifyHRNewLeaveRequest = async (hrEmail, employeeName, leaderName, leave)
 const notifyLeaderLeaveUpdated = async (leaderEmail, employeeName, leave) => {
   const subject = `Leave Update Needed: ${employeeName}`;
   const statusBadge = `<span class="badge badge-pending">Updated - Pending Leader Approval</span>`;
+  const changeSummary = leave.change_summary || [];
+  const changeRows = changeSummary.length > 0
+    ? changeSummary.map((item) => `<tr><td class="label">Change</td><td>${item}</td></tr>`).join('')
+    : '<tr><td class="label">Change</td><td>No detailed changes were provided.</td></tr>';
 
   const content = `
     <p>Hello,</p>
@@ -334,6 +344,7 @@ const notifyLeaderLeaveUpdated = async (leaderEmail, employeeName, leave) => {
         <td class="label">Status</td>
         <td>${statusBadge}</td>
       </tr>
+      ${changeRows}
     </table>
 
     <p>Please review the updated request in the HRMS dashboard.</p>
@@ -391,6 +402,10 @@ const notifyLeaderForApproval = async (leaderEmail, employeeName, leave) => {
 const notifyHRLeaveUpdated = async (hrEmail, employeeName, leaderName, leave) => {
   const subject = `Updated Leave Request: ${employeeName}`;
   const statusBadge = `<span class="badge badge-pending">Updated - Pending Review</span>`;
+  const changeSummary = leave.change_summary || [];
+  const changeRows = changeSummary.length > 0
+    ? changeSummary.map((item) => `<tr><td class="label">Change</td><td>${item}</td></tr>`).join('')
+    : '<tr><td class="label">Change</td><td>No detailed changes were provided.</td></tr>';
 
   const content = `
     <p>Hello HR Team,</p>
@@ -421,6 +436,7 @@ const notifyHRLeaveUpdated = async (hrEmail, employeeName, leaderName, leave) =>
         <td class="label">Status</td>
         <td>${statusBadge}</td>
       </tr>
+      ${changeRows}
     </table>
 
     <p>Please review the updated request in the HRMS dashboard.</p>
