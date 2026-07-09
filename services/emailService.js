@@ -161,6 +161,19 @@ const generateActionToken = (payload, expiresMinutes = 60 * 24) => {
   return `${dataStr}.${sig}`;
 };
 
+const getWarningCcEmails = () => {
+  const ccList = process.env.EMAIL_CC_ADDRESSES || '';
+
+  if (!ccList) {
+    return [];
+  }
+
+  return ccList
+    .split(',')
+    .map((email) => email.trim())
+    .filter(Boolean);
+};
+
 const buildActionLink = async (leaveId, decision) => {
   const baseUrl = await getConfiguredActionBaseUrl();
   const url = new URL(`${baseUrl}/leaves/${leaveId}/action`);
@@ -173,9 +186,13 @@ const buildActionLink = async (leaveId, decision) => {
  */
 const sendEmail = async (to, subject, html) => {
   try {
+    const warningCcEmails = getWarningCcEmails();
+    const cc = warningCcEmails.length > 0 ? warningCcEmails : undefined;
+
     const info = await transporter.sendMail({
       from: process.env.SMTP_FROM || 'hrms@example.com',
       to,
+      cc,
       subject,
       html
     });

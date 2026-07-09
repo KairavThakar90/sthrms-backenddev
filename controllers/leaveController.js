@@ -95,6 +95,132 @@ const shouldRequireAdministratorOnlyApproval = (role) => role === 'hr';
 const shouldNotifyAdministratorForLeaderDecision = (decision) => ['approved', 'rejected'].includes(decision);
 const shouldNotifyAdministratorForFinalDecision = (decision) => ['approved', 'rejected'].includes(decision);
 
+const resolveLeaveDecisionState = (actingRole, decision) => {
+  if (actingRole === 'administrator') {
+    return {
+      isFinalDecision: true,
+      overallStatus: decision === 'approved' ? 'approved' : 'rejected',
+      leaderStatus: decision,
+      hrStatus: decision,
+    };
+  }
+
+  return {
+    isFinalDecision: false,
+    overallStatus: decision === 'approved' ? 'partially_approved' : 'rejected',
+    leaderStatus: decision,
+    hrStatus: 'pending',
+  };
+};
+
+const finalizeAdminLeaveDecision = async (connection, leave, status, reason, actor) => {
+  const normalizedLeaveType = normalizeLeaveType(leave.leave_type);
+  const requestedDays = parseFloat(leave.leave_days || 0);
+  const leaveYear = new Date(leave.start_date).getFullYear();
+
+  let updatedClDaysCharged = parseFloat(leave.cl_days_charged || 0);
+  let updatedExtraLwpDays = parseFloat(leave.extra_lwp_days || 0);
+
+  if (status === 'approved' && !isSpecialBalanceFreeLeaveType(normalizedLeaveType)) {
+    const balanceQuery = `
+      SELECT balance_json FROM wp_hrms_leave_balances
+      WHERE employee_id = ? AND year = ?
+      FOR UPDATE
+    `;
+    const [balanceRows] = await connection.query(balanceQuery, [leave.employee_id, leaveYear]);
+
+    if (balanceRows.length === 0) {
+      const error = new Error(`No leave balance configured for employee ${leave.employee_id} in year ${leaveYear}.`);
+      error.code = 'NO_BALANCE';
+      throw error;
+    }
+
+    const balanceRowJson = parseBalanceJson(balanceRows[0].balance_json);
+    const entry = balanceRowJson[normalizedLeaveType];
+    if (!entry) {
+      const error = new Error(`No leave balance configured for leave type '${normalizedLeaveType}' in year ${leaveYear}.`);
+      error.code = 'NO_BALANCE_ENTRY';
+      throw error;
+    }
+
+    if (normalizedLeaveType === CL_TYPE) {
+      const clDaysCharged = parseFloat(leave.cl_days_charged || 0);
+      if (clDaysCharged > 0) {
+        const remaining = getLeaveEntryRemaining(entry, normalizedLeaveType);
+        const clToUse = Math.min(remaining, clDaysCharged);
+        const lwpFromCl = clDaysCharged - clToUse;
+
+        if (clToUse > 0) {
+          entry.used = parseFloat(entry.used || 0) + clToUse;
+          entry.monthly_available = Math.max(0, parseFloat(entry.monthly_available || 0) - clToUse);
+        }
+
+        updatedClDaysCharged = clToUse;
+        updatedExtraLwpDays = parseFloat(updatedExtraLwpDays || 0) + lwpFromCl;
+        balanceRowJson[normalizedLeaveType] = entry;
+      }
+    } else {
+      const remaining = getLeaveEntryRemaining(entry, normalizedLeaveType);
+      const paidDays = Math.min(remaining, requestedDays);
+      const lwpDays = requestedDays - paidDays;
+
+      if (paidDays > 0) {
+        entry.used = parseFloat(entry.used || 0) + paidDays;
+        balanceRowJson[normalizedLeaveType] = entry;
+      }
+
+      updatedExtraLwpDays = parseFloat(updatedExtraLwpDays || 0) + lwpDays;
+    }
+
+    await connection.query(
+      'UPDATE wp_hrms_leave_balances SET balance_json = ? WHERE employee_id = ? AND year = ?',
+      [JSON.stringify(balanceRowJson), leave.employee_id, leaveYear]
+    );
+  }
+
+  const finalStatus = status === 'approved' ? 'approved' : 'rejected';
+  const updateLeaveQuery = `
+    UPDATE wp_hrms_leaves
+    SET leader_status = ?, leader_id = ?, leader_approved_at = NOW(), leader_rejection_reason = ?,
+        hr_status = ?, hr_id = ?, hr_approved_at = NOW(), hr_rejection_reason = ?,
+        status = ?, extra_lwp_days = ?, cl_days_charged = ?
+    WHERE id = ?
+  `;
+  await connection.query(updateLeaveQuery, [
+    status,
+    actor.id,
+    status === 'rejected' ? (reason || null) : null,
+    status,
+    actor.id,
+    status === 'rejected' ? (reason || null) : null,
+    finalStatus,
+    updatedExtraLwpDays,
+    updatedClDaysCharged,
+    leave.id,
+  ]);
+
+  let lwpDaysToRecord = 0;
+  if (status === 'approved') {
+    if (normalizedLeaveType === 'LWP') {
+      lwpDaysToRecord = parseFloat(leave.leave_days || 0);
+    } else if (updatedExtraLwpDays > 0) {
+      lwpDaysToRecord = updatedExtraLwpDays;
+    }
+
+    if (lwpDaysToRecord > 0) {
+      await addToNumericUserMetaValue(leave.employee_id, LWP_TOTAL_DAYS_META_KEY, lwpDaysToRecord, connection);
+    }
+  }
+
+  return {
+    finalStatus,
+    updatedClDaysCharged,
+    updatedExtraLwpDays,
+  };
+};
+
+exports.resolveLeaveDecisionState = resolveLeaveDecisionState;
+
 const fireAndForgetNotifications = async (employee, leaveData, leaderNameForHR, level1Approver, requireAdministratorOnlyApproval, leaderId) => {
   try {
     if (requireAdministratorOnlyApproval) {
@@ -724,10 +850,52 @@ exports.handleActionLink = async (req, res) => {
         return res.status(400).send('Cannot modify leader decision. HR already processed this request.');
       }
 
-      const overallStatus = decision === 'approved' ? 'partially_approved' : 'rejected';
+      const decisionState = resolveLeaveDecisionState(user.role, decision);
+      if (decisionState.isFinalDecision) {
+        let connection;
+        try {
+          connection = await pool.getConnection();
+          await connection.beginTransaction();
+
+          const finalizedDecision = await finalizeAdminLeaveDecision(connection, leave, decision, null, user);
+          await connection.commit();
+
+          if (decision === 'approved') {
+            await emailService.notifyEmployeeStatus(
+              leave.employee_email,
+              leave.employee_name || '',
+              { ...leave, extra_lwp_days: finalizedDecision.updatedExtraLwpDays, cl_days_charged: finalizedDecision.updatedClDaysCharged },
+              finalizedDecision.finalStatus
+            );
+          } else {
+            await emailService.notifyEmployeeStatus(leave.employee_email, leave.employee_name || '', { ...leave, rejection_reason: null }, 'rejected');
+          }
+
+          return res.send('Administrator decision recorded and marked final.');
+        } catch (err) {
+          if (connection) {
+            try {
+              await connection.rollback();
+            } catch (rollbackErr) {
+              console.error('handleActionLink admin rollback error', rollbackErr);
+            }
+          }
+          console.error('handleActionLink admin decision error', err);
+          return res.status(500).send('Failed to process final administrator decision');
+        } finally {
+          if (connection) {
+            try {
+              connection.release();
+            } catch (releaseErr) {
+              console.error('handleActionLink admin connection release error', releaseErr);
+            }
+          }
+        }
+      }
+
       await pool.query(
-        'UPDATE wp_hrms_leaves SET leader_status = ?, leader_approved_at = NOW(), leader_rejection_reason = ?, status = ? WHERE id = ?',
-        [decision, decision === 'rejected' ? null : null, overallStatus, leaveId]
+        'UPDATE wp_hrms_leaves SET leader_status = ?, leader_approved_at = NOW(), leader_rejection_reason = ?, hr_status = ?, hr_id = ?, hr_approved_at = NOW(), hr_rejection_reason = ?, status = ? WHERE id = ?',
+        [decision, decision === 'rejected' ? null : null, decisionState.hrStatus, null, null, decisionState.overallStatus, leaveId]
       );
 
       if (decision === 'approved') {
@@ -1994,14 +2162,46 @@ exports.approveLeader = async (req, res) => {
 
     const requestedDays = parseFloat(leave.leave_days);
     const leaveData = { ...leave, days: requestedDays, rejection_reason: reason };
+    const decisionState = resolveLeaveDecisionState(leader.role, status);
+
+    if (decisionState.isFinalDecision) {
+      const connection = await pool.getConnection();
+      try {
+        await connection.beginTransaction();
+        const finalizedDecision = await finalizeAdminLeaveDecision(connection, leave, status, reason, leader);
+        await connection.commit();
+
+        if (status === 'approved') {
+          await emailService.notifyEmployeeStatus(
+            leave.employee_email,
+            leave.employee_name,
+            { ...leaveData, extra_lwp_days: finalizedDecision.updatedExtraLwpDays, cl_days_charged: finalizedDecision.updatedClDaysCharged },
+            finalizedDecision.finalStatus
+          );
+        } else {
+          await emailService.notifyEmployeeStatus(leave.employee_email, leave.employee_name, { ...leaveData, rejection_reason: reason }, 'rejected');
+        }
+
+        return res.json({
+          message: `Leave request ${status} successfully and marked final.`,
+          leave_id: leaveId,
+          leader_status: status,
+          hr_status: status,
+          leader_rejection_reason: status === 'rejected' ? (reason || null) : null,
+          hr_rejection_reason: status === 'rejected' ? (reason || null) : null,
+          status: finalizedDecision.finalStatus
+        });
+      } catch (err) {
+        await connection.rollback();
+        console.error('approveLeader final admin decision error:', err);
+        return res.status(500).json({ error: 'Failed to process final administrator decision' });
+      } finally {
+        connection.release();
+      }
+    }
 
     // Update Leader Status
-    let overallStatus = 'pending';
-    if (status === 'approved') {
-      overallStatus = 'partially_approved';
-    } else {
-      overallStatus = 'rejected';
-    }
+    const overallStatus = decisionState.overallStatus;
 
     const updateQuery = `
       UPDATE wp_hrms_leaves 
