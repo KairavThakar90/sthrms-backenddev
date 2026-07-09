@@ -91,6 +91,18 @@ const getWordPressUserRole = async (userId) => {
   return 'employee';
 };
 
+const getUserDisplayNameById = async (userId) => {
+  if (!userId) return null;
+
+  try {
+    const [rows] = await pool.query('SELECT display_name FROM wp_users WHERE ID = ? LIMIT 1', [userId]);
+    return rows[0]?.display_name || null;
+  } catch (error) {
+    console.warn('[Leave Controller] Failed to resolve approver display name:', error.message);
+    return null;
+  }
+};
+
 const shouldRequireAdministratorOnlyApproval = (role) => role === 'hr';
 const shouldNotifyAdministratorForLeaderDecision = (decision) => ['approved', 'rejected'].includes(decision);
 const shouldNotifyAdministratorForFinalDecision = (decision) => ['approved', 'rejected'].includes(decision);
@@ -223,15 +235,15 @@ exports.resolveLeaveDecisionState = resolveLeaveDecisionState;
 
 const fireAndForgetNotifications = async (employee, leaveData, leaderNameForHR, level1Approver, requireAdministratorOnlyApproval, leaderId) => {
   try {
+    const hrEmails = await getHrEmails();
+
     if (requireAdministratorOnlyApproval) {
-      const administratorEmails = await getAdministratorEmails();
-      for (const adminEmail of administratorEmails) {
-        await emailService.notifyHRForApproval(adminEmail, employee.name, leaderNameForHR, leaveData, true);
+      for (const hrEmail of hrEmails) {
+        await emailService.notifyHRForApproval(hrEmail, employee.name, leaderNameForHR, leaveData, true);
       }
       return;
     }
 
-    const hrEmails = await getHrEmails();
     if (employee.role === 'leader') {
       for (const hrEmail of hrEmails) {
         await emailService.notifyHRForApproval(hrEmail, employee.name, leaderNameForHR, leaveData, true);
@@ -248,9 +260,8 @@ const fireAndForgetNotifications = async (employee, leaveData, leaderNameForHR, 
       return;
     }
 
-    const administratorEmails = await getAdministratorEmails();
-    for (const adminEmail of administratorEmails) {
-      await emailService.notifyHRForApproval(adminEmail, employee.name, leaderNameForHR, leaveData);
+    for (const hrEmail of hrEmails) {
+      await emailService.notifyHRForApproval(hrEmail, employee.name, leaderNameForHR, leaveData);
     }
   } catch (error) {
     console.warn('[Leave Submission] Background notifications failed:', error.message);
@@ -865,10 +876,12 @@ exports.handleActionLink = async (req, res) => {
               leave.employee_email,
               leave.employee_name || '',
               { ...leave, extra_lwp_days: finalizedDecision.updatedExtraLwpDays, cl_days_charged: finalizedDecision.updatedClDaysCharged },
-              finalizedDecision.finalStatus
+              finalizedDecision.finalStatus,
+              'administrator',
+              'Administrator'
             );
           } else {
-            await emailService.notifyEmployeeStatus(leave.employee_email, leave.employee_name || '', { ...leave, rejection_reason: null }, 'rejected');
+            await emailService.notifyEmployeeStatus(leave.employee_email, leave.employee_name || '', { ...leave, rejection_reason: null }, 'rejected', 'administrator', 'Administrator');
           }
 
           return res.send('Administrator decision recorded and marked final.');
@@ -898,15 +911,16 @@ exports.handleActionLink = async (req, res) => {
         [decision, decision === 'rejected' ? null : null, decisionState.hrStatus, null, null, decisionState.overallStatus, leaveId]
       );
 
+      const approverDisplayName = user?.name || (await getUserDisplayNameById(user?.id)) || 'Leader';
       if (decision === 'approved') {
-        const administratorEmails = (await getAdministratorEmails()).filter((email) => email && email.toLowerCase() !== user.email?.toLowerCase());
-        for (const adminEmail of administratorEmails) {
-          await emailService.notifyHRForApproval(adminEmail, leave.employee_name || '', user.name, leave);
+        const hrEmails = (await getHrEmails()).filter((email) => email && email.toLowerCase() !== user.email?.toLowerCase());
+        for (const hrEmail of hrEmails) {
+          await emailService.notifyHRForApproval(hrEmail, leave.employee_name || '', approverDisplayName, leave);
         }
-        return res.send('Leader approval recorded. Administrator has been notified.');
+        return res.send('Leader approval recorded. HR has been notified.');
       }
 
-      await emailService.notifyEmployeeStatus(leave.employee_email, leave.employee_name || '', { ...leave, rejection_reason: null }, 'rejected');
+      await emailService.notifyEmployeeStatus(leave.employee_email, leave.employee_name || '', { ...leave, rejection_reason: null }, 'rejected', 'leader', 'Leader');
       return res.send('Leader rejection recorded and employee notified.');
     }
 
@@ -997,13 +1011,14 @@ exports.handleActionLink = async (req, res) => {
         await connection.commit();
 
         if (shouldNotifyAdministratorForFinalDecision(decision)) {
-          const administratorEmails = await getAdministratorEmails();
-          for (const adminEmail of administratorEmails) {
-            await emailService.notifyHRForApproval(adminEmail, leaveRec.employee_name, leaveRec.employee_name, { ...leaveRec, extra_lwp_days: updatedExtraLwpDays, cl_days_charged: updatedClDaysCharged, rejection_reason: decision === 'rejected' ? null : null });
+          const hrEmails = (await getHrEmails()).filter((email) => email && email.toLowerCase() !== user.email?.toLowerCase());
+          const approverDisplayName = user?.name || (await getUserDisplayNameById(user?.id)) || 'HR';
+          for (const hrEmail of hrEmails) {
+            await emailService.notifyHRForApproval(hrEmail, leaveRec.employee_name, approverDisplayName, { ...leaveRec, extra_lwp_days: updatedExtraLwpDays, cl_days_charged: updatedClDaysCharged, rejection_reason: decision === 'rejected' ? null : null }, false, decision);
           }
         }
 
-        await emailService.notifyEmployeeStatus(leaveRec.employee_email, leaveRec.employee_name, { ...leaveRec, extra_lwp_days: updatedExtraLwpDays, cl_days_charged: updatedClDaysCharged }, finalStatus);
+        await emailService.notifyEmployeeStatus(leaveRec.employee_email, leaveRec.employee_name, { ...leaveRec, extra_lwp_days: updatedExtraLwpDays, cl_days_charged: updatedClDaysCharged }, finalStatus, 'hr', 'HR');
         return res.send('HR decision recorded and employee notified.');
       } catch (err) {
         if (connection) {
@@ -1558,9 +1573,9 @@ exports.updateLeave = async (req, res) => {
     void emailService.notifyEmployeeLeaveUpdated(employee.email, employee.name, leaveData);
 
     if (requireAdministratorOnlyApproval) {
-      const administratorEmails = await getAdministratorEmails();
-      for (const adminEmail of administratorEmails) {
-        await emailService.notifyHRLeaveUpdated(adminEmail, employee.name, employee.name, leaveData);
+      const hrEmails = await getHrEmails();
+      for (const hrEmail of hrEmails) {
+        await emailService.notifyHRLeaveUpdated(hrEmail, employee.name, employee.name, leaveData);
       }
     } else {
       const hrEmails = await getHrEmails();
@@ -2163,6 +2178,7 @@ exports.approveLeader = async (req, res) => {
     const requestedDays = parseFloat(leave.leave_days);
     const leaveData = { ...leave, days: requestedDays, rejection_reason: reason };
     const decisionState = resolveLeaveDecisionState(leader.role, status);
+    const approverDisplayName = leader?.name || (await getUserDisplayNameById(leader?.id)) || 'Leader';
 
     if (decisionState.isFinalDecision) {
       const connection = await pool.getConnection();
@@ -2176,10 +2192,12 @@ exports.approveLeader = async (req, res) => {
             leave.employee_email,
             leave.employee_name,
             { ...leaveData, extra_lwp_days: finalizedDecision.updatedExtraLwpDays, cl_days_charged: finalizedDecision.updatedClDaysCharged },
-            finalizedDecision.finalStatus
+            finalizedDecision.finalStatus,
+            'administrator',
+            'Administrator'
           );
         } else {
-          await emailService.notifyEmployeeStatus(leave.employee_email, leave.employee_name, { ...leaveData, rejection_reason: reason }, 'rejected');
+          await emailService.notifyEmployeeStatus(leave.employee_email, leave.employee_name, { ...leaveData, rejection_reason: reason }, 'rejected', 'administrator', 'Administrator');
         }
 
         return res.json({
@@ -2212,22 +2230,18 @@ exports.approveLeader = async (req, res) => {
 
     // Send notifications
     if (status === 'approved') {
-      const administratorEmails = await getAdministratorEmails();
-      for (const adminEmail of administratorEmails) {
-        await emailService.notifyHRForApproval(adminEmail, leave.employee_name, leader.name, leaveData);
-      }
-
       const hrEmails = (await getHrEmails())
         .filter(email => email && email.toLowerCase() !== leader.email?.toLowerCase());
       for (const hrEmail of hrEmails) {
-        await emailService.notifyHRForApproval(hrEmail, leave.employee_name, leader.name, leaveData);
+        await emailService.notifyHRForApproval(hrEmail, leave.employee_name, approverDisplayName, leaveData, false, status);
       }
     } else {
-      const administratorEmails = await getAdministratorEmails();
-      for (const adminEmail of administratorEmails) {
-        await emailService.notifyHRForApproval(adminEmail, leave.employee_name, leader.name, { ...leaveData, rejection_reason: reason });
+      const hrEmails = (await getHrEmails())
+        .filter(email => email && email.toLowerCase() !== leader.email?.toLowerCase());
+      for (const hrEmail of hrEmails) {
+        await emailService.notifyHRForApproval(hrEmail, leave.employee_name, approverDisplayName, { ...leaveData, rejection_reason: reason }, false, status);
       }
-      await emailService.notifyEmployeeStatus(leave.employee_email, leave.employee_name, leaveData, 'rejected');
+      await emailService.notifyEmployeeStatus(leave.employee_email, leave.employee_name, leaveData, 'rejected', 'leader', 'Leader');
     }
 
     res.json({
@@ -2400,16 +2414,24 @@ exports.approveHR = async (req, res) => {
 
     // 3. Notify administrator of the final HR decision for all leave request types
     if (shouldNotifyAdministratorForFinalDecision(status)) {
-      const administratorEmails = await getAdministratorEmails();
-      for (const adminEmail of administratorEmails) {
-        await emailService.notifyHRForApproval(adminEmail, leave.employee_name, leave.employee_name, { ...leaveData, rejection_reason: reason });
+      const hrEmails = (await getHrEmails()).filter((email) => email && email.toLowerCase() !== hr.email?.toLowerCase());
+      const approverDisplayName = hr?.name || (await getUserDisplayNameById(hr?.id)) || 'HR';
+      for (const hrEmail of hrEmails) {
+        await emailService.notifyHRForApproval(hrEmail, leave.employee_name, approverDisplayName, { ...leaveData, rejection_reason: reason }, false, status);
       }
     }
 
     // 4. Send final confirmation/rejection email to Employee
     leaveData.extra_lwp_days = updatedExtraLwpDays;
     leaveData.cl_days_charged = updatedClDaysCharged;
-    await emailService.notifyEmployeeStatus(leave.employee_email, leave.employee_name, leaveData, finalStatus);
+    await emailService.notifyEmployeeStatus(leave.employee_email, leave.employee_name, leaveData, finalStatus, 'hr', 'HR');
+
+    if (hr?.email) {
+      const leaderEmail = leave.leader_email || null;
+      if (leaderEmail) {
+        await emailService.notifyLeaderDecisionOutcome(leaderEmail, leave.employee_name, leaveData, finalStatus);
+      }
+    }
 
     res.json({
       message: `HR ${status} leave request successfully.`,

@@ -135,6 +135,39 @@ const getDurationText = (leave) => {
 const crypto = require('crypto');
 const DEFAULT_APP_BASE_URL = process.env.APP_BASE_URL || (process.env.APP_URL || 'http://localhost:3000');
 
+const buildLeaveNotificationSubject = ({ recipientType, event }) => {
+  const subjectMap = {
+    employee: {
+      submitted: 'Leave Request Submitted Successfully',
+      hr_approved: 'Leave Request Approved',
+      hr_rejected: 'Leave Request Rejected by HR',
+      leader_rejected: 'Leave Request Rejected by Leader',
+      updated: 'Leave Request Updated'
+    },
+    leader: {
+      submitted: 'New Leave Request Submitted – Level 1 Approval Required',
+      hr_approved: 'Leave Request Approved by HR',
+      hr_rejected: 'Leave Request Rejected by HR'
+    },
+    hr: {
+      submitted: 'New Leave Request Submitted',
+      leader_approved: 'Leave Request Approved by Leader – Level 2 Approval Required',
+      leader_rejected: 'Leave Request Rejected by Leader',
+      hr_approved: 'Leave Request Approved by HR',
+      hr_rejected: 'Leave Request Rejected by HR'
+    },
+    cc: {
+      submitted: 'New Leave Request Submitted',
+      leader_approved: 'Leave Request Approved by Leader',
+      leader_rejected: 'Leave Request Rejected by Leader',
+      hr_approved: 'Leave Request Approved by HR',
+      hr_rejected: 'Leave Request Rejected by HR'
+    }
+  };
+
+  return subjectMap[recipientType]?.[event] || 'Leave Request Update';
+};
+
 const getConfiguredActionBaseUrl = async () => {
   try {
     const [rows] = await pool.query('SELECT option_value FROM wp_options WHERE option_name = ? LIMIT 1', ['st_frontend_url_hrml']);
@@ -208,7 +241,7 @@ const sendEmail = async (to, subject, html) => {
  * Notify Employee that their leave request was received and is pending review.
  */
 const notifyEmployeeRequestReceived = async (employeeEmail, employeeName, leave) => {
-  const subject = `Leave Request Submitted: ${leave.leave_type_full || leave.leave_type}`;
+  const subject = buildLeaveNotificationSubject({ recipientType: 'employee', event: 'submitted' });
   const statusBadge = `<span class="badge badge-pending">Submitted - Pending Review</span>`;
 
   const content = `
@@ -246,7 +279,7 @@ const notifyEmployeeRequestReceived = async (employeeEmail, employeeName, leave)
  * Notify Employee that their leave request was updated and is pending review.
  */
 const notifyEmployeeLeaveUpdated = async (employeeEmail, employeeName, leave) => {
-  const subject = `Leave Request Updated: ${leave.leave_type_full || leave.leave_type}`;
+  const subject = buildLeaveNotificationSubject({ recipientType: 'employee', event: 'updated' });
   const statusBadge = `<span class="badge badge-pending">Updated - Pending Review</span>`;
   const changeSummary = leave.change_summary || [];
   const changeRows = changeSummary.length > 0
@@ -289,7 +322,7 @@ const notifyEmployeeLeaveUpdated = async (employeeEmail, employeeName, leave) =>
  * Notify HR that a new leave request has been submitted and is awaiting review.
  */
 const notifyHRNewLeaveRequest = async (hrEmail, employeeName, leaderName, leave) => {
-  const subject = `New Leave Request Submitted: ${employeeName}`;
+  const subject = buildLeaveNotificationSubject({ recipientType: 'hr', event: 'submitted' });
   const statusBadge = `<span class="badge badge-pending">Pending Leader / HR Review</span>`;
 
   const content = `
@@ -374,7 +407,7 @@ const notifyLeaderLeaveUpdated = async (leaderEmail, employeeName, leave) => {
  * Notify Leader that their direct report applied for leave (Level 1 Review Required).
  */
 const notifyLeaderForApproval = async (leaderEmail, employeeName, leave) => {
-  const subject = `Leave Approval Needed: ${employeeName}`;
+  const subject = buildLeaveNotificationSubject({ recipientType: 'leader', event: 'submitted' });
   const statusBadge = `<span class="badge badge-pending">Pending Leader Approval</span>`;
   
   const approveLink = await buildActionLink(leave.id, 'approved');
@@ -417,7 +450,7 @@ const notifyLeaderForApproval = async (leaderEmail, employeeName, leave) => {
  * Notify HR that an updated leave request is awaiting review.
  */
 const notifyHRLeaveUpdated = async (hrEmail, employeeName, leaderName, leave) => {
-  const subject = `Updated Leave Request: ${employeeName}`;
+  const subject = 'Leave Request Updated';
   const statusBadge = `<span class="badge badge-pending">Updated - Pending Review</span>`;
   const changeSummary = leave.change_summary || [];
   const changeRows = changeSummary.length > 0
@@ -465,25 +498,30 @@ const notifyHRLeaveUpdated = async (hrEmail, employeeName, leaderName, leave) =>
 /**
  * Notify HR that a request has been approved by the Leader (Level 2 Review Required).
  */
-const notifyHRForApproval = async (hrEmail, employeeName, approvingPartyName, leave, isFinalApproval = false) => {
-  const subject = isFinalApproval
-    ? `Final Approval Needed: Leave Request for ${employeeName}`
-    : `Level 1 Approved: Leave Request for ${employeeName}`;
+const notifyHRForApproval = async (hrEmail, employeeName, approvingPartyName, leave, isFinalApproval = false, decision = 'approved') => {
+  const subject = decision === 'rejected'
+    ? buildLeaveNotificationSubject({ recipientType: 'hr', event: 'leader_rejected' })
+    : buildLeaveNotificationSubject({ recipientType: 'hr', event: 'leader_approved' });
 
-  const statusBadge = isFinalApproval
-    ? `<span class="badge badge-partially">Pending Final Approval</span>`
-    : `<span class="badge badge-partially">Leader Approved (Pending HR)</span>`;
+  const isRejected = decision === 'rejected';
+  const statusBadge = isRejected
+    ? `<span class="badge badge-rejected">Rejected</span>`
+    : (isFinalApproval
+      ? `<span class="badge badge-partially">Pending Final Approval</span>`
+      : `<span class="badge badge-partially">Leader Approved (Pending HR)</span>`);
   
   const approveLink = await buildActionLink(leave.id, 'approved');
   const rejectLink = await buildActionLink(leave.id, 'rejected');
 
-  const introText = isFinalApproval
-    ? `<p><strong>${employeeName}</strong>'s leave request is now awaiting your final approval.</p>`
-    : `<p><strong>${employeeName}</strong>'s leave request has been approved by their Leader (<strong>${approvingPartyName}</strong>) and is now awaiting your Level 2 final approval.</p>`;
+  const introText = isRejected
+    ? `<p><strong>${employeeName}</strong>'s leave request has been rejected by their Leader (<strong>${approvingPartyName}</strong>).</p>`
+    : (isFinalApproval
+      ? `<p><strong>${employeeName}</strong>'s leave request is now awaiting your final approval.</p>`
+      : `<p><strong>${employeeName}</strong>'s leave request has been approved by their Leader (<strong>${approvingPartyName}</strong>) and is now awaiting your Level 2 final approval.</p>`);
 
-  const approverRowLabel = isFinalApproval ? 'Submitted By' : 'Approved By';
-  const approverRowValue = isFinalApproval ? approvingPartyName : `${approvingPartyName} (Leader)`;
-  const emailTitle = isFinalApproval ? 'Leave Request Pending Final Approval' : 'Level 1 Leave Approved';
+  const approverRowLabel = isRejected ? 'Rejected By' : (isFinalApproval ? 'Submitted By' : 'Approved By');
+  const approverRowValue = isRejected ? `${approvingPartyName} (Leader)` : (isFinalApproval ? approvingPartyName : `${approvingPartyName} (Leader)`);
+  const emailTitle = isRejected ? 'Leave Request Rejected by Leader' : (isFinalApproval ? 'Leave Request Pending Final Approval' : 'Level 1 Leave Approved');
 
   const content = `
     <p>Hello HR Team,</p>
@@ -512,10 +550,10 @@ const notifyHRForApproval = async (hrEmail, employeeName, approvingPartyName, le
       </tr>
     </table>
     
-    <p>
+    ${isRejected ? '' : `<p>
       <a href="${approveLink}" style="display:inline-block;padding:12px 18px;background:#10b981;color:#fff;border-radius:6px;margin-right:8px;text-decoration:none;">Approve</a>
       <a href="${rejectLink}" style="display:inline-block;padding:12px 18px;background:#ef4444;color:#fff;border-radius:6px;text-decoration:none;">Reject</a>
-    </p>
+    </p>`}
     <p style="margin-top:12px;font-size:13px;color:#6b7280">Or log in to the HRMS Dashboard to process and add a rejection reason if needed.</p>
   `;
   
@@ -525,17 +563,64 @@ const notifyHRForApproval = async (hrEmail, employeeName, approvingPartyName, le
 /**
  * Notify Employee of the final outcome of their leave application (Approved or Rejected).
  */
-const notifyEmployeeStatus = async (employeeEmail, employeeName, leave, finalStatus) => {
-  const subject = `Leave Request ${finalStatus.toUpperCase()}: ${leave.leave_type}`;
+const notifyLeaderDecisionOutcome = async (leaderEmail, employeeName, leave, finalStatus) => {
+  const subject = finalStatus === 'approved'
+    ? buildLeaveNotificationSubject({ recipientType: 'leader', event: 'hr_approved' })
+    : buildLeaveNotificationSubject({ recipientType: 'leader', event: 'hr_rejected' });
+
+  const statusBadge = finalStatus === 'approved'
+    ? `<span class="badge badge-approved">Approved</span>`
+    : `<span class="badge badge-rejected">Rejected</span>`;
+
+  const statusText = finalStatus === 'approved'
+    ? `HR has approved the leave request for <strong>${employeeName}</strong>.`
+    : `HR has rejected the leave request for <strong>${employeeName}</strong>.`;
+
+  const content = `
+    <p>Hello,</p>
+    <p>${statusText}</p>
+
+    <table class="details-table">
+      <tr>
+        <td class="label">Employee</td>
+        <td>${employeeName}</td>
+      </tr>
+      <tr>
+        <td class="label">Leave Type</td>
+        <td>${leave.leave_type}</td>
+      </tr>
+      <tr>
+        <td class="label">Duration</td>
+        <td>${getDurationText(leave)}</td>
+      </tr>
+      <tr>
+        <td class="label">Status</td>
+        <td>${statusBadge}</td>
+      </tr>
+    </table>
+  `;
+
+  return sendEmail(leaderEmail, subject, getHtmlTemplate(finalStatus === 'approved' ? 'Leave Request Approved by HR' : 'Leave Request Rejected by HR', content));
+};
+
+const notifyEmployeeStatus = async (employeeEmail, employeeName, leave, finalStatus, actorRole = 'hr', actorName = 'HR') => {
+  const subject = finalStatus === 'approved'
+    ? buildLeaveNotificationSubject({ recipientType: 'employee', event: 'hr_approved' })
+    : actorRole === 'leader'
+      ? buildLeaveNotificationSubject({ recipientType: 'employee', event: 'leader_rejected' })
+      : buildLeaveNotificationSubject({ recipientType: 'employee', event: 'hr_rejected' });
   
   let statusBadge = '';
   let statusText = '';
   if (finalStatus === 'approved') {
     statusBadge = `<span class="badge badge-approved">Approved</span>`;
     statusText = `Congratulations! Your leave request has been fully approved by both your Leader and HR. Your leave balance has been updated accordingly.`;
+  } else if (actorRole === 'leader') {
+    statusBadge = `<span class="badge badge-rejected">Rejected</span>`;
+    statusText = `We regret to inform you that your leave request has been rejected by your Leader.`;
   } else {
     statusBadge = `<span class="badge badge-rejected">Rejected</span>`;
-    statusText = `We regret to inform you that your leave request has been rejected.`;
+    statusText = `We regret to inform you that your leave request has been rejected by HR.`;
   }
   
   let rejectionReasonRow = '';
@@ -581,6 +666,7 @@ const notifyEmployeeStatus = async (employeeEmail, employeeName, leave, finalSta
 
 module.exports = {
   buildActionLink,
+  buildLeaveNotificationSubject,
   notifyEmployeeRequestReceived,
   notifyEmployeeLeaveUpdated,
   notifyHRNewLeaveRequest,
@@ -588,5 +674,6 @@ module.exports = {
   notifyLeaderLeaveUpdated,
   notifyHRForApproval,
   notifyHRLeaveUpdated,
+  notifyLeaderDecisionOutcome,
   notifyEmployeeStatus
 };
