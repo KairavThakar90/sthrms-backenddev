@@ -236,6 +236,7 @@ exports.resolveLeaveDecisionState = resolveLeaveDecisionState;
 const fireAndForgetNotifications = async (employee, leaveData, leaderNameForHR, level1Approver, requireAdministratorOnlyApproval, leaderId) => {
   try {
     const hrEmails = await getHrEmails();
+    console.log(`[Leave Submission] Notification flow start for employee ${employee.id} (${employee.name}), role=${employee.role}, requireAdministratorOnlyApproval=${requireAdministratorOnlyApproval}, leaderId=${leaderId}, level1Approver=${level1Approver ? level1Approver.user_email : 'none'}`);
 
     if (requireAdministratorOnlyApproval) {
       for (const hrEmail of hrEmails) {
@@ -256,10 +257,12 @@ const fireAndForgetNotifications = async (employee, leaveData, leaderNameForHR, 
     }
 
     if (leaderId && level1Approver) {
+      console.log(`[Leave Submission] Sending leader approval email to ${level1Approver.user_email} for employee ${employee.name}, leaveId=${leaveData.id}`);
       await emailService.notifyLeaderForApproval(level1Approver.user_email, employee.name, leaveData);
       return;
     }
 
+    console.log('[Leave Submission] No leader notification sent; falling back to HR approval notifications.');
     for (const hrEmail of hrEmails) {
       await emailService.notifyHRForApproval(hrEmail, employee.name, leaderNameForHR, leaveData);
     }
@@ -1570,7 +1573,9 @@ exports.updateLeave = async (req, res) => {
       change_summary: changeSummary,
     };
 
-    void emailService.notifyEmployeeLeaveUpdated(employee.email, employee.name, leaveData);
+    emailService.notifyEmployeeLeaveUpdated(employee.email, employee.name, leaveData)
+      .then((sent) => console.log(`[Leave Notification] notifyEmployeeLeaveUpdated -> to=${employee.email} sent=${sent}`))
+      .catch((err) => console.warn('[Leave Notification] notifyEmployeeLeaveUpdated error:', err && err.message ? err.message : err));
 
     if (requireAdministratorOnlyApproval) {
       const hrEmails = await getHrEmails();
@@ -2006,8 +2011,10 @@ exports.applyLeave = async (req, res) => {
     };
 
     // Notify employee that the request was received and will be reviewed.
-    // Keep this non-blocking so the API response stays fast.
-    void emailService.notifyEmployeeRequestReceived(employee.email, employee.name, leaveData);
+    // Keep this non-blocking but log outcome for debugging intermittent delivery.
+    emailService.notifyEmployeeRequestReceived(employee.email, employee.name, leaveData)
+      .then((sent) => console.log(`[Leave Notification] notifyEmployeeRequestReceived -> to=${employee.email} sent=${sent}`))
+      .catch((err) => console.warn('[Leave Notification] notifyEmployeeRequestReceived error:', err && err.message ? err.message : err));
 
     const leaderNameForHR = employee.role === 'leader'
       ? `${employee.name} (Self-approved Leader)`

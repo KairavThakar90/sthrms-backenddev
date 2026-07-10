@@ -425,6 +425,7 @@ const notifyLeaderForApproval = async (leaderEmail, employeeName, leave) => {
     { recipientType: 'leader', event: 'submitted' },
     { employeeName }
   );
+  console.log(`[Email Service] Preparing leader approval notification for ${leaderEmail}, employee ${employeeName}, leaveId=${leave.id}`);
   const statusBadge = `<span class="badge badge-pending">Pending Leader Approval</span>`;
   
   const approveLink = await buildActionLink(leave.id, 'approved');
