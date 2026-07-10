@@ -224,20 +224,60 @@ const buildActionLink = async (leaveId, decision) => {
 const sendEmail = async (to, subject, html) => {
   try {
     const warningCcEmails = getWarningCcEmails();
-    const cc = warningCcEmails.length > 0 ? warningCcEmails : undefined;
+    const cc = warningCcEmails.length > 0 ? warningCcEmails : [];
 
-    console.log(`[Email Service] Sending email to ${to} with subject: ${subject}`);
-    const info = await transporter.sendMail({
-      from: process.env.SMTP_FROM || 'hrms@example.com',
+    // WP Email Bridge endpoint (configurable)
+    const wpBridge = process.env.WP_EMAIL_BRIDGE_URL || (process.env.APP_BASE_URL ? `${process.env.APP_BASE_URL.replace(/\/+$/, '')}/wp-json/hrms/v1/send-email` : null);
+    if (!wpBridge) {
+      console.error('[Email Service] No WP_EMAIL_BRIDGE_URL or APP_BASE_URL configured for WP email bridge');
+      return false;
+    }
+
+    const payload = {
       to,
-      cc,
       subject,
-      html
+      html,
+      cc,
+      from: process.env.SMTP_FROM || undefined
+    };
+
+    const urlObj = new URL(wpBridge);
+    const isHttps = urlObj.protocol === 'https:';
+    const lib = isHttps ? require('https') : require('http');
+
+    await new Promise((resolve, reject) => {
+      const opts = {
+        method: 'POST',
+        hostname: urlObj.hostname,
+        port: urlObj.port || (isHttps ? 443 : 80),
+        path: `${urlObj.pathname}${urlObj.search || ''}`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(JSON.stringify(payload))
+        }
+      };
+
+      const req = lib.request(opts, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve();
+          } else {
+            reject(new Error(`WP bridge responded ${res.statusCode}: ${data}`));
+          }
+        });
+      });
+
+      req.on('error', (err) => reject(err));
+      req.write(JSON.stringify(payload));
+      req.end();
     });
-    console.log(`[Email Service] Email sent successfully: ${info.messageId} to ${to}`);
+
+    console.log(`[Email Service] Email bridged via WP endpoint to ${Array.isArray(to) ? to.join(',') : to} subject: ${subject}`);
     return true;
   } catch (error) {
-    console.error('[Email Service] Error sending email:', error);
+    console.error('[Email Service] Error sending email via WP bridge:', error);
     return false;
   }
 };
