@@ -135,37 +135,41 @@ const getDurationText = (leave) => {
 const crypto = require('crypto');
 const DEFAULT_APP_BASE_URL = process.env.APP_BASE_URL || (process.env.APP_URL || 'http://localhost:3000');
 
-const buildLeaveNotificationSubject = ({ recipientType, event }) => {
+const buildLeaveNotificationSubject = ({ recipientType, event }, context = {}) => {
+  const employeeName = context.employeeName ? context.employeeName.trim() : '';
+  const approverName = context.approverName ? context.approverName.trim() : '';
+
   const subjectMap = {
     employee: {
-      submitted: 'Leave Request Submitted Successfully',
-      hr_approved: 'Leave Request Approved',
-      hr_rejected: 'Leave Request Rejected by HR',
-      leader_rejected: 'Leave Request Rejected by Leader',
-      updated: 'Leave Request Updated'
+      submitted: `Leave Request Submitted by ${employeeName}`,
+      hr_approved: `Leave Request Approved by HR for ${employeeName}`,
+      hr_rejected: `Leave Request Rejected by HR for ${employeeName}`,
+      leader_rejected: `Leave Request Rejected by Leader for ${employeeName}`,
+      updated: `Leave Request Updated by ${employeeName}`
     },
     leader: {
-      submitted: 'New Leave Request Submitted – Level 1 Approval Required',
-      hr_approved: 'Leave Request Approved by HR',
-      hr_rejected: 'Leave Request Rejected by HR'
+      submitted: `Leave Request from ${employeeName} Waiting for Your Approval`,
+      hr_approved: `Leave Request Approved by HR for ${employeeName}`,
+      hr_rejected: `Leave Request Rejected by HR for ${employeeName}`
     },
     hr: {
-      submitted: 'New Leave Request Submitted',
-      leader_approved: 'Leave Request Approved by Leader – Level 2 Approval Required',
-      leader_rejected: 'Leave Request Rejected by Leader',
-      hr_approved: 'Leave Request Approved by HR',
-      hr_rejected: 'Leave Request Rejected by HR'
+      submitted: `New Leave Request Submitted by ${employeeName}`,
+      leader_approved: `Leave Request Approved by Leader for ${employeeName}`,
+      leader_rejected: `Leave Request Rejected by Leader for ${employeeName}`,
+      hr_approved: `Leave Request Approved by HR for ${employeeName}`,
+      hr_rejected: `Leave Request Rejected by HR for ${employeeName}`
     },
     cc: {
-      submitted: 'New Leave Request Submitted',
-      leader_approved: 'Leave Request Approved by Leader',
-      leader_rejected: 'Leave Request Rejected by Leader',
-      hr_approved: 'Leave Request Approved by HR',
-      hr_rejected: 'Leave Request Rejected by HR'
+      submitted: `New Leave Request Submitted by ${employeeName}`,
+      leader_approved: `Leave Request Approved by Leader for ${employeeName}`,
+      leader_rejected: `Leave Request Rejected by Leader for ${employeeName}`,
+      hr_approved: `Leave Request Approved by HR for ${employeeName}`,
+      hr_rejected: `Leave Request Rejected by HR for ${employeeName}`
     }
   };
 
-  return subjectMap[recipientType]?.[event] || 'Leave Request Update';
+  const subject = subjectMap[recipientType]?.[event] || 'Leave Request Update';
+  return subject.replace(/\s+/g, ' ').trim();
 };
 
 const getConfiguredActionBaseUrl = async () => {
@@ -222,6 +226,7 @@ const sendEmail = async (to, subject, html) => {
     const warningCcEmails = getWarningCcEmails();
     const cc = warningCcEmails.length > 0 ? warningCcEmails : undefined;
 
+    console.log(`[Email Service] Sending email to ${to} with subject: ${subject}`);
     const info = await transporter.sendMail({
       from: process.env.SMTP_FROM || 'hrms@example.com',
       to,
@@ -229,7 +234,7 @@ const sendEmail = async (to, subject, html) => {
       subject,
       html
     });
-    console.log(`[Email Service] Email sent: ${info.messageId} to ${to}`);
+    console.log(`[Email Service] Email sent successfully: ${info.messageId} to ${to}`);
     return true;
   } catch (error) {
     console.error('[Email Service] Error sending email:', error);
@@ -241,7 +246,10 @@ const sendEmail = async (to, subject, html) => {
  * Notify Employee that their leave request was received and is pending review.
  */
 const notifyEmployeeRequestReceived = async (employeeEmail, employeeName, leave) => {
-  const subject = buildLeaveNotificationSubject({ recipientType: 'employee', event: 'submitted' });
+  const subject = buildLeaveNotificationSubject(
+    { recipientType: 'employee', event: 'submitted' },
+    { employeeName }
+  );
   const statusBadge = `<span class="badge badge-pending">Submitted - Pending Review</span>`;
 
   const content = `
@@ -279,7 +287,10 @@ const notifyEmployeeRequestReceived = async (employeeEmail, employeeName, leave)
  * Notify Employee that their leave request was updated and is pending review.
  */
 const notifyEmployeeLeaveUpdated = async (employeeEmail, employeeName, leave) => {
-  const subject = buildLeaveNotificationSubject({ recipientType: 'employee', event: 'updated' });
+  const subject = buildLeaveNotificationSubject(
+    { recipientType: 'employee', event: 'updated' },
+    { employeeName }
+  );
   const statusBadge = `<span class="badge badge-pending">Updated - Pending Review</span>`;
   const changeSummary = leave.change_summary || [];
   const changeRows = changeSummary.length > 0
@@ -322,7 +333,10 @@ const notifyEmployeeLeaveUpdated = async (employeeEmail, employeeName, leave) =>
  * Notify HR that a new leave request has been submitted and is awaiting review.
  */
 const notifyHRNewLeaveRequest = async (hrEmail, employeeName, leaderName, leave) => {
-  const subject = buildLeaveNotificationSubject({ recipientType: 'hr', event: 'submitted' });
+  const subject = buildLeaveNotificationSubject(
+    { recipientType: 'hr', event: 'submitted' },
+    { employeeName }
+  );
   const statusBadge = `<span class="badge badge-pending">Pending Leader / HR Review</span>`;
 
   const content = `
@@ -407,7 +421,10 @@ const notifyLeaderLeaveUpdated = async (leaderEmail, employeeName, leave) => {
  * Notify Leader that their direct report applied for leave (Level 1 Review Required).
  */
 const notifyLeaderForApproval = async (leaderEmail, employeeName, leave) => {
-  const subject = buildLeaveNotificationSubject({ recipientType: 'leader', event: 'submitted' });
+  const subject = buildLeaveNotificationSubject(
+    { recipientType: 'leader', event: 'submitted' },
+    { employeeName }
+  );
   const statusBadge = `<span class="badge badge-pending">Pending Leader Approval</span>`;
   
   const approveLink = await buildActionLink(leave.id, 'approved');
@@ -500,8 +517,14 @@ const notifyHRLeaveUpdated = async (hrEmail, employeeName, leaderName, leave) =>
  */
 const notifyHRForApproval = async (hrEmail, employeeName, approvingPartyName, leave, isFinalApproval = false, decision = 'approved') => {
   const subject = decision === 'rejected'
-    ? buildLeaveNotificationSubject({ recipientType: 'hr', event: 'leader_rejected' })
-    : buildLeaveNotificationSubject({ recipientType: 'hr', event: 'leader_approved' });
+    ? buildLeaveNotificationSubject(
+        { recipientType: 'hr', event: 'leader_rejected' },
+        { employeeName, approverName: approvingPartyName }
+      )
+    : buildLeaveNotificationSubject(
+        { recipientType: 'hr', event: 'leader_approved' },
+        { employeeName, approverName: approvingPartyName }
+      );
 
   const isRejected = decision === 'rejected';
   const statusBadge = isRejected
@@ -565,8 +588,14 @@ const notifyHRForApproval = async (hrEmail, employeeName, approvingPartyName, le
  */
 const notifyLeaderDecisionOutcome = async (leaderEmail, employeeName, leave, finalStatus) => {
   const subject = finalStatus === 'approved'
-    ? buildLeaveNotificationSubject({ recipientType: 'leader', event: 'hr_approved' })
-    : buildLeaveNotificationSubject({ recipientType: 'leader', event: 'hr_rejected' });
+    ? buildLeaveNotificationSubject(
+        { recipientType: 'leader', event: 'hr_approved' },
+        { employeeName }
+      )
+    : buildLeaveNotificationSubject(
+        { recipientType: 'leader', event: 'hr_rejected' },
+        { employeeName }
+      );
 
   const statusBadge = finalStatus === 'approved'
     ? `<span class="badge badge-approved">Approved</span>`
@@ -605,10 +634,19 @@ const notifyLeaderDecisionOutcome = async (leaderEmail, employeeName, leave, fin
 
 const notifyEmployeeStatus = async (employeeEmail, employeeName, leave, finalStatus, actorRole = 'hr', actorName = 'HR') => {
   const subject = finalStatus === 'approved'
-    ? buildLeaveNotificationSubject({ recipientType: 'employee', event: 'hr_approved' })
+    ? buildLeaveNotificationSubject(
+        { recipientType: 'employee', event: 'hr_approved' },
+        { employeeName }
+      )
     : actorRole === 'leader'
-      ? buildLeaveNotificationSubject({ recipientType: 'employee', event: 'leader_rejected' })
-      : buildLeaveNotificationSubject({ recipientType: 'employee', event: 'hr_rejected' });
+      ? buildLeaveNotificationSubject(
+          { recipientType: 'employee', event: 'leader_rejected' },
+          { employeeName }
+        )
+      : buildLeaveNotificationSubject(
+          { recipientType: 'employee', event: 'hr_rejected' },
+          { employeeName }
+        );
   
   let statusBadge = '';
   let statusText = '';
