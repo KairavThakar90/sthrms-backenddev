@@ -191,20 +191,25 @@ const finalizeAdminLeaveDecision = async (connection, leave, status, reason, act
   }
 
   const finalStatus = status === 'approved' ? 'approved' : 'rejected';
+  // When an administrator finalizes a decision, do NOT overwrite the original `leader_id`.
+  // Instead record the acting administrator's id in `administrator_id` so the assigned
+  // leader remains visible while still tracking which admin performed the action.
   const updateLeaveQuery = `
     UPDATE wp_hrms_leaves
-    SET leader_status = ?, leader_id = ?, leader_approved_at = NOW(), leader_rejection_reason = ?,
+    SET leader_status = ?, leader_approved_at = NOW(), leader_rejection_reason = ?,
         hr_status = ?, hr_id = ?, hr_approved_at = NOW(), hr_rejection_reason = ?,
-        status = ?, extra_lwp_days = ?, cl_days_charged = ?
+        administrator_id = ?, status = ?, extra_lwp_days = ?, cl_days_charged = ?
     WHERE id = ?
   `;
+
+  const adminIdToRecord = (actor && actor.role === 'administrator') ? actor.id : null;
   await connection.query(updateLeaveQuery, [
     status,
-    actor.id,
     status === 'rejected' ? (reason || null) : null,
     status,
     actor.id,
     status === 'rejected' ? (reason || null) : null,
+    adminIdToRecord,
     finalStatus,
     updatedExtraLwpDays,
     updatedClDaysCharged,
@@ -1742,16 +1747,11 @@ exports.applyLeave = async (req, res) => {
     const leaveRequiresBalance = !SPECIAL_BALANCE_FREE_LEAVE_TYPES.includes(canonicalLeaveType);
 
     // Early Leave (EL) special handling: 2 hours (0.25 day) allowed once per MONTH
-    // Requires `compensate_date` in request which must fall within the same week
-    // or the next week of the start_date.
+    // Requires `compensate_date` in request; no week-limitation is enforced.
     if (canonicalLeaveType === 'EL') {
       const compensate_date = req.body.compensate_date;
       if (!compensate_date) {
-        return res.status(400).json({ error: 'Early Leave requires compensate_date. Provide a date within the current week or next week.' });
-      }
-
-      if (!isWithinCurrentOrNextWeek(start_date, compensate_date)) {
-        return res.status(400).json({ error: 'Compensate date must be within the same week or the following week of the early leave.' });
+        return res.status(400).json({ error: 'Early Leave requires compensate_date.' });
       }
 
       // Check if user already took early leave in same month
