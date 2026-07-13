@@ -9,6 +9,7 @@ const leaveRoutes = require('./leaveRoutes');
 const holidayRoutes = require('./holidayRoutes');
 const profileRoutes = require('./profileRoutes');
 const feedbackRoutes = require('./feedbackRoutes');
+const timeTrackingRoutes = require('./timeTrackingRoutes');
 const leaveController = require('../controllers/leaveController');
 const documentController = require('../controllers/documentController');
 
@@ -35,5 +36,6 @@ router.use('/feedback', feedbackRoutes);
 router.use('/leaves', leaveRoutes);
 router.use('/holidays', holidayRoutes);
 router.use('/profile', profileRoutes);
+router.use('/time-tracking', timeTrackingRoutes);
 
 module.exports = router;
