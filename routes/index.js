@@ -30,8 +30,14 @@ const upload = multer({
 });
 
 router.get('/policy-document', leaveController.getCurrentPolicyDocument);
-router.post('/documents/upload', upload.single('file'), documentController.uploadDocumentToWordPress);
+router.post('/documents/upload', upload.fields([
+  { name: 'file', maxCount: 1 },
+  { name: 'front_file', maxCount: 1 },
+  { name: 'back_file', maxCount: 1 },
+]), documentController.uploadDocumentToWordPress);
 router.post('/documents/save', documentController.saveDocumentMetadata);
+router.get('/documents', documentController.listUserDocuments);
+router.get('/documents/:user_id', documentController.listUserDocuments);
 router.use('/feedback', feedbackRoutes);
 router.use('/leaves', leaveRoutes);
 router.use('/holidays', holidayRoutes);

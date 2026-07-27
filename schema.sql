@@ -47,3 +47,13 @@ CREATE TABLE IF NOT EXISTS `wp_hrms_leave_balances` (
   UNIQUE KEY `idx_emp_year` (`employee_id`, `year`),
   FOREIGN KEY (`employee_id`) REFERENCES `wp_users`(`ID`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 3. Feedback Table
+CREATE TABLE IF NOT EXISTS `wp_hrms_feedback` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `user_id` BIGINT UNSIGNED NOT NULL,
+  `feedback_type` ENUM('like', 'dislike', 'newteal') NOT NULL,
+  `reason` TEXT DEFAULT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`user_id`) REFERENCES `wp_users`(`ID`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

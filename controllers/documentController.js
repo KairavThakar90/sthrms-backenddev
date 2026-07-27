@@ -14,17 +14,25 @@ const normalizeDocumentType = (value) => {
   return String(value).trim().toUpperCase();
 };
 
+const normalizeUploadMode = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === 'double' ? 'double' : 'single';
+};
+
 const validateUploadPayload = (req) => {
-  if (!req.file) {
+  const uploadedFiles = req.files ? Object.values(req.files).flat() : [];
+  const primaryFile = req.file || uploadedFiles[0];
+
+  if (!primaryFile) {
     return { ok: false, message: 'No file uploaded.' };
   }
 
-  const ext = path.extname(req.file.originalname || '').toLowerCase().replace('.', '');
+  const ext = path.extname(primaryFile.originalname || '').toLowerCase().replace('.', '');
   if (!ALLOWED_EXTENSIONS.includes(ext)) {
     return { ok: false, message: 'File type not allowed. Allowed: PDF, JPG, PNG, SVG.' };
   }
 
-  if (!ALLOWED_MIME_TYPES.includes(req.file.mimetype)) {
+  if (!ALLOWED_MIME_TYPES.includes(primaryFile.mimetype)) {
     return { ok: false, message: 'File type not allowed. Allowed: PDF, JPG, PNG, SVG.' };
   }
 
@@ -109,6 +117,14 @@ const deleteUploadedTempFile = (filePath) => {
   }
 };
 
+const getUploadedFiles = (req) => {
+  if (req.files) {
+    return Object.values(req.files).flat();
+  }
+
+  return req.file ? [req.file] : [];
+};
+
 exports.uploadDocumentToWordPress = async (req, res) => {
   try {
     const validation = validateUploadPayload(req);
@@ -116,44 +132,69 @@ exports.uploadDocumentToWordPress = async (req, res) => {
       return res.status(400).json({ success: false, message: validation.message });
     }
 
-    const uploadResult = await uploadToWordPressViaHttp(req, req.file);
-    if (!uploadResult.ok) {
-      return res.status(400).json({ success: false, message: uploadResult.message });
+    const uploadedFiles = getUploadedFiles(req);
+    const requestedUploadMode = normalizeUploadMode(req.body?.upload_mode || req.body?.uploadMode || req.body?.mode);
+    const uploadMode = requestedUploadMode === 'double' || uploadedFiles.length > 1 ? 'double' : 'single';
+
+    const uploadResults = [];
+    for (const file of uploadedFiles) {
+      const uploadResult = await uploadToWordPressViaHttp(req, file);
+      if (!uploadResult.ok) {
+        return res.status(400).json({ success: false, message: uploadResult.message });
+      }
+
+      uploadResults.push({
+        fieldname: file.fieldname,
+        attachment_id: uploadResult.attachmentId,
+        url: uploadResult.url,
+        metadata: uploadResult.metadata,
+      });
+    }
+
+    if (uploadMode === 'double' && uploadResults.length < 2) {
+      return res.status(400).json({ success: false, message: 'Both front and back documents are required for double upload mode.' });
     }
 
     return res.json({
       success: true,
       message: 'Document uploaded to WordPress successfully.',
       data: {
-        attachment_id: uploadResult.attachmentId,
-        url: uploadResult.url,
-        metadata: uploadResult.metadata,
+        upload_mode: uploadMode,
+        uploads: uploadResults,
       },
     });
   } catch (error) {
     console.error('[Document Upload] Failed:', error);
     return res.status(500).json({ success: false, message: 'Failed to upload document.' });
   } finally {
-    deleteUploadedTempFile(req.file?.path);
+    const uploadedFiles = getUploadedFiles(req);
+    uploadedFiles.forEach((file) => deleteUploadedTempFile(file?.path));
   }
 };
 
 exports.saveDocumentMetadata = async (req, res) => {
   try {
-    const { user_id, document_type, attachment_id, document_url } = req.body;
+    const requestPayload = {
+      user_id: req.body?.user_id,
+      document_type: normalizeDocumentType(req.body?.document_type),
+      upload_mode: normalizeUploadMode(req.body?.upload_mode || req.body?.uploadMode || req.body?.mode),
+      document_id: req.body?.document_id ?? req.body?.attachment_id ?? req.body?.front_document_id ?? req.body?.front_attachment_id,
+      document_url: req.body?.document_url ?? req.body?.front_document_url,
+      back_document_id: req.body?.back_document_id ?? req.body?.back_attachment_id,
+      back_document_url: req.body?.back_document_url,
+    };
 
-    if (!user_id || !document_type || !attachment_id || !document_url) {
-      return res.status(400).json({ success: false, message: 'user_id, document_type, attachment_id, and document_url are required.' });
+    if (!requestPayload.user_id || !requestPayload.document_type || !requestPayload.document_id || !requestPayload.document_url) {
+      return res.status(400).json({ success: false, message: 'user_id, document_type, document_id, and document_url are required.' });
     }
 
-    const normalizedType = normalizeDocumentType(document_type);
-    if (!normalizedType) {
-      return res.status(400).json({ success: false, message: 'Invalid document type.' });
+    if (requestPayload.upload_mode === 'double' && (!requestPayload.back_document_id || !requestPayload.back_document_url)) {
+      return res.status(400).json({ success: false, message: 'back_document_id and back_document_url are required for double upload mode.' });
     }
 
     const [result] = await pool.query(
-      'INSERT INTO wp_user_documents (user_id, document_type, document_id, document_url) VALUES (?, ?, ?, ?)',
-      [user_id, normalizedType, attachment_id, document_url]
+      'INSERT INTO wp_user_documents (user_id, document_type, upload_mode, document_id, document_url, back_document_id, back_document_url) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [requestPayload.user_id, requestPayload.document_type, requestPayload.upload_mode, requestPayload.document_id, requestPayload.document_url, requestPayload.back_document_id, requestPayload.back_document_url]
     );
 
     return res.json({
@@ -161,14 +202,52 @@ exports.saveDocumentMetadata = async (req, res) => {
       message: 'Document metadata saved successfully.',
       data: {
         id: result.insertId,
-        user_id,
-        document_type: normalizedType,
-        attachment_id,
-        document_url,
+        user_id: requestPayload.user_id,
+        document_type: requestPayload.document_type,
+        upload_mode: requestPayload.upload_mode,
+        document_id: requestPayload.document_id,
+        document_url: requestPayload.document_url,
+        back_document_id: requestPayload.back_document_id,
+        back_document_url: requestPayload.back_document_url,
       },
     });
   } catch (error) {
     console.error('[Document Save] Failed:', error);
     return res.status(500).json({ success: false, message: 'Failed to save document metadata.' });
+  }
+};
+
+exports.listUserDocuments = async (req, res) => {
+  try {
+    const userId = req.params?.user_id || req.query?.user_id || req.body?.user_id;
+    const documentType = req.query?.document_type || req.query?.documentType;
+
+    if (!userId) {
+      return res.status(400).json({ success: false, message: 'user_id is required.' });
+    }
+
+    let query = 'SELECT id, user_id, document_type, upload_mode, document_id, document_url, back_document_id, back_document_url, created_at FROM wp_user_documents WHERE user_id = ?';
+    const values = [userId];
+
+    if (documentType) {
+      query += ' AND document_type = ?';
+      values.push(String(documentType).trim().toUpperCase());
+    }
+
+    query += ' ORDER BY created_at DESC, id DESC';
+
+    const [rows] = await pool.query(query, values);
+
+    return res.json({
+      success: true,
+      data: rows.map((row) => ({
+        ...row,
+        attachment_id: row.document_id,
+        back_attachment_id: row.back_document_id,
+      })),
+    });
+  } catch (error) {
+    console.error('[Document List] Failed:', error);
+    return res.status(500).json({ success: false, message: 'Failed to fetch documents.' });
   }
 };

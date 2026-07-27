@@ -21,6 +21,7 @@ router.get('/balances', leaveController.getLeaveBalances);
 router.post('/balances', authorize(['administrator', 'hr']), leaveController.configureLeaveBalance);
 
 // 3. Apply for leave (everyone can access)
+router.post('/apply-on-behalf', authorize(['administrator', 'hr']), leaveController.applyLeaveOnBehalf);
 router.post('/', leaveController.applyLeave);
 
 // 3b. Update an existing leave request (owner only while still pending/reviewable)

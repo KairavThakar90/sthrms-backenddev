@@ -125,6 +125,7 @@ exports.getWeeklyHoursUpToDate = async (req, res) => {
     let totalActiveHours = 0;
     let totalIdleHours = 0;
     let totalDiscussionHours = 0;
+    let daysWithDataCount = 0;
 
     const days = dateRange.map((d) => {
       const entry = dayDataByDate[d];
@@ -148,6 +149,7 @@ exports.getWeeklyHoursUpToDate = async (req, res) => {
       totalActiveHours += dayActiveHours;
       totalIdleHours += dayIdleHours;
       totalDiscussionHours += dayDiscussionHours;
+      daysWithDataCount += 1;
 
       return {
         date: d,
@@ -170,6 +172,7 @@ exports.getWeeklyHoursUpToDate = async (req, res) => {
       total_active_hours: round2(totalActiveHours),
       total_idle_hours: round2(totalIdleHours),
       total_discussion_hours: round2(totalDiscussionHours),
+      days_with_data: daysWithDataCount,
       //days,
     });
   } catch (err) {

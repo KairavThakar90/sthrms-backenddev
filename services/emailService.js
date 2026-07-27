@@ -221,10 +221,15 @@ const buildActionLink = async (leaveId, decision) => {
 /**
  * Send an email using nodemailer.
  */
-const sendEmail = async (to, subject, html) => {
+const sendEmail = async (to, subject, html, options = {}) => {
   try {
-    const warningCcEmails = getWarningCcEmails();
-    const cc = warningCcEmails.length > 0 ? warningCcEmails : [];
+    const configuredCc = getWarningCcEmails();
+    const suppressCc = Boolean(options?.suppressCc);
+    const cc = suppressCc
+      ? []
+      : (Object.prototype.hasOwnProperty.call(options, 'cc')
+        ? (Array.isArray(options.cc) ? options.cc : [])
+        : (configuredCc.length > 0 ? configuredCc : []));
 
     // WP Email Bridge endpoint (configurable)
     const wpBridge = process.env.WP_EMAIL_BRIDGE_URL || (process.env.APP_BASE_URL ? `${process.env.APP_BASE_URL.replace(/\/+$/, '')}/wp-json/hrms/v1/send-email` : null);
@@ -413,7 +418,9 @@ const notifyHRNewLeaveRequest = async (hrEmail, employeeName, leaderName, leave)
     <p>Please review this request in the HRMS dashboard.</p>
   `;
 
-  return sendEmail(hrEmail, subject, getHtmlTemplate('New Leave Request Submitted', content));
+  return sendEmail(hrEmail, subject, getHtmlTemplate('New Leave Request Submitted', content), {
+    suppressCc: true
+  });
 };
 
 /**
@@ -743,6 +750,61 @@ const notifyEmployeeStatus = async (employeeEmail, employeeName, leave, finalSta
   return sendEmail(employeeEmail, subject, getHtmlTemplate(`Leave Request ${finalStatus.toUpperCase()}`, content));
 };
 
+/**
+ * Notify Employee that a leave was applied and auto-approved on their behalf.
+ */
+const notifyEmployeeLeaveAppliedOnBehalf = async (employeeEmail, employeeName, ccEmails, adminName, leave) => {
+  const subject = `Leave Request Created & Approved on Your Behalf`;
+
+  const content = `
+    <p>Dear ${employeeName},</p>
+    <p>We would like to inform you that a leave request has been created on your behalf by ${adminName} and has been pre-approved.</p>
+    
+    <p><strong>Leave Details:</strong></p>
+    <table class="details-table">
+      <tr>
+        <td class="label">Leave Type</td>
+        <td>${leave.leave_type_full || leave.leave_type}</td>
+      </tr>
+      <tr>
+        <td class="label">Start Date</td>
+        <td>${formatDate(leave.start_date)}</td>
+      </tr>
+      <tr>
+        <td class="label">End Date</td>
+        <td>${formatDate(leave.end_date)}</td>
+      </tr>
+      <tr>
+        <td class="label">Total Days</td>
+        <td>${leave.days} Day(s)</td>
+      </tr>
+      <tr>
+        <td class="label">Reason</td>
+        <td>${leave.reason}</td>
+      </tr>
+      <tr>
+        <td class="label">Created By</td>
+        <td>${adminName}</td>
+      </tr>
+      <tr>
+        <td class="label">Approval Status</td>
+        <td>✅ Approved</td>
+      </tr>
+    </table>
+    
+    <p>No further action is required from your side.</p>
+    <p>If you believe any of the above details are incorrect or need to request any changes, please contact the HR team as soon as possible.</p>
+    
+    <p>Thank you.</p>
+    <br>
+    <p>Best Regards,<br>
+    ST HRMS<br>
+    HR Department</p>
+  `;
+
+  return sendEmail(employeeEmail, subject, getHtmlTemplate('Leave Created on Your Behalf', content), { cc: ccEmails });
+};
+
 module.exports = {
   buildActionLink,
   buildLeaveNotificationSubject,
@@ -754,5 +816,6 @@ module.exports = {
   notifyHRForApproval,
   notifyHRLeaveUpdated,
   notifyLeaderDecisionOutcome,
-  notifyEmployeeStatus
+  notifyEmployeeStatus,
+  notifyEmployeeLeaveAppliedOnBehalf
 };

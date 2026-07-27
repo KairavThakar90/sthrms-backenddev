@@ -481,12 +481,12 @@ const updateProfile = async (req, res) => {
 
       const normalizedValue = field.value === null || field.value === '' ? null : String(field.value);
       const [existingRows] = await pool.query(
-        'SELECT meta_id FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1',
+        'SELECT umeta_id FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1',
         [userId, field.key]
       );
 
       if (existingRows.length > 0) {
-        await pool.query('UPDATE wp_usermeta SET meta_value = ? WHERE meta_id = ?', [normalizedValue, existingRows[0].meta_id]);
+        await pool.query('UPDATE wp_usermeta SET meta_value = ? WHERE umeta_id = ?', [normalizedValue, existingRows[0].umeta_id]);
       } else if (normalizedValue !== null) {
         await pool.query('INSERT INTO wp_usermeta (user_id, meta_key, meta_value) VALUES (?, ?, ?)', [userId, field.key, normalizedValue]);
       }
@@ -565,12 +565,12 @@ const uploadProfileImage = async (req, res) => {
 
     const normalizedValue = String(uploadResult.attachmentId);
     const [existingRows] = await pool.query(
-      'SELECT meta_id FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1',
+      'SELECT umeta_id FROM wp_usermeta WHERE user_id = ? AND meta_key = ? LIMIT 1',
       [userId, USER_META_KEYS.profileIcon]
     );
 
     if (existingRows.length > 0) {
-      await pool.query('UPDATE wp_usermeta SET meta_value = ? WHERE meta_id = ?', [normalizedValue, existingRows[0].meta_id]);
+      await pool.query('UPDATE wp_usermeta SET meta_value = ? WHERE umeta_id = ?', [normalizedValue, existingRows[0].umeta_id]);
     } else {
       await pool.query('INSERT INTO wp_usermeta (user_id, meta_key, meta_value) VALUES (?, ?, ?)', [userId, USER_META_KEYS.profileIcon, normalizedValue]);
     }

@@ -1,943 +1,1063 @@
 {
-  "info": {
-    "name": "ST HRMS Management API",
-    "description": "Postman Collection for the ST HRMS Leave Management API.\n\n**Authentication:** All endpoints require a valid WordPress JWT access token in the Authorization header.\n- Format: `Authorization: Bearer <your_jwt_token>`\n- The user identity (ID, role, permissions) is extracted ONLY from the JWT token — no X-User-ID header.\n- Set the `jwtToken` collection variable to your current access token before testing.\n\n**Approval Flow:** Apply → Leader Approval → HR Approval → Balance Deducted",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-  },
-  "item": [
-    {
-      "name": "General",
-      "item": [
-        {
-          "name": "API Health Check",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                ""
-              ]
-            },
-            "description": "Simple health check to verify the Express server is online. No authentication required."
-          },
-          "response": []
-        }
-      ]
+    "info": {
+        "name": "ST HRMS Management API",
+        "description": "Postman Collection for the ST HRMS Leave Management API.\n\n**Authentication:** All endpoints require a valid WordPress JWT access token in the Authorization header.\n- Format: `Authorization: Bearer <your_jwt_token>`\n- The user identity (ID, role, permissions) is extracted ONLY from the JWT token \u2014 no X-User-ID header.\n- Set the `jwtToken` collection variable to your current access token before testing.\n\n**Approval Flow:** Apply \u2192 Leader Approval \u2192 HR Approval \u2192 Balance Deducted",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
     },
-    {
-      "name": "Document APIs",
-      "item": [
+    "item": [
         {
-          "name": "Upload Document to WordPress",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{jwtToken}}",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "formdata",
-              "formdata": [
+            "name": "General",
+            "item": [
                 {
-                  "key": "file",
-                  "type": "file",
-                  "src": "",
-                  "description": "Select a PDF, JPG, PNG, or SVG file"
+                    "name": "API Health Check",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                ""
+                            ]
+                        },
+                        "description": "Simple health check to verify the Express server is online. No authentication required."
+                    },
+                    "response": []
                 }
-              ]
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/documents/upload",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "documents",
-                "upload"
-              ]
-            },
-            "description": "Uploads a document to the WordPress media library via the WordPress upload endpoint and returns the attachment ID and URL."
-          },
-          "response": []
+            ]
         },
         {
-          "name": "Save Document Metadata",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{jwtToken}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"user_id\": 83,\n  \"document_type\": \"MS\",\n  \"attachment_id\": 45,\n  \"document_url\": \"https://dev-st-performance.pantheonsite.io/wp-content/uploads/2026/07/CVIN_User_Journey_v3.pdf\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
+            "name": "Document APIs",
+            "item": [
+                {
+                    "name": "Upload Document to WordPress",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{jwtToken}}",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "file",
+                                    "type": "file",
+                                    "src": "",
+                                    "description": "Select a PDF, JPG, PNG, or SVG file"
+                                }
+                            ]
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/documents/upload",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "documents",
+                                "upload"
+                            ]
+                        },
+                        "description": "Uploads a document to the WordPress media library via the WordPress upload endpoint and returns the attachment ID and URL."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Save Document Metadata",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{jwtToken}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"user_id\": 83,\n  \"document_type\": \"MS\",\n  \"attachment_id\": 45,\n  \"document_url\": \"https://dev-st-performance.pantheonsite.io/wp-content/uploads/2026/07/CVIN_User_Journey_v3.pdf\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/documents/save",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "documents",
+                                "save"
+                            ]
+                        },
+                        "description": "Saves the uploaded WordPress attachment metadata into the wp_user_documents table."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Edit / Replace Document Metadata",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{jwtToken}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"user_id\": 83,\n  \"document_type\": \"AD\",\n  \"attachment_id\": 46,\n  \"document_url\": \"https://dev-st-performance.pantheonsite.io/wp-content/uploads/2026/07/aadhaar.pdf\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/documents/save",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "documents",
+                                "save"
+                            ]
+                        },
+                        "description": "Use this same endpoint when replacing an existing document entry. The new attachment ID and URL will be stored as a fresh record."
+                    },
+                    "response": []
                 }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/documents/save",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "documents",
-                "save"
-              ]
-            },
-            "description": "Saves the uploaded WordPress attachment metadata into the wp_user_documents table."
-          },
-          "response": []
+            ]
         },
         {
-          "name": "Edit / Replace Document Metadata",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{jwtToken}}",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"user_id\": 83,\n  \"document_type\": \"AD\",\n  \"attachment_id\": 46,\n  \"document_url\": \"https://dev-st-performance.pantheonsite.io/wp-content/uploads/2026/07/aadhaar.pdf\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
+            "name": "Feedback APIs",
+            "item": [
+                {
+                    "name": "Submit Feedback",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{jwtToken}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"feedback_type\": \"like\",\n  \"reason\": \"The new leave approval flow is easy to use.\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/feedback",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "feedback"
+                            ]
+                        },
+                        "description": "Submit user feedback. Allowed feedback_type values: like, dislike, newteal."
+                    },
+                    "response": []
                 }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/documents/save",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "documents",
-                "save"
-              ]
-            },
-            "description": "Use this same endpoint when replacing an existing document entry. The new attachment ID and URL will be stored as a fresh record."
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Leave APIs",
-      "item": [
+            ]
+        },
         {
-          "name": "Leave Balances",
-          "item": [
-            {
-              "name": "Get My Leave Balances",
-              "request": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{jwtToken}}",
-                    "description": "Your WordPress JWT access token. User ID is extracted from this token automatically.",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/api/leaves/balances?year=2026",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "leaves",
-                    "balances"
-                  ],
-                  "query": [
-                    {
-                      "key": "year",
-                      "value": "2026",
-                      "description": "Year to fetch balances for"
-                    },
-                    {
-                      "key": "employee_id",
-                      "value": "101",
-                      "description": "Optional. View another employee's balance. Admin/HR can view any; Leaders can view their direct reports.",
-                      "disabled": true
-                    }
-                  ]
+            "name": "Leave APIs",
+            "item": [
+                {
+                    "name": "Leave Balances",
+                    "item": [
+                        {
+                            "name": "Get My Leave Balances",
+                            "request": {
+                                "method": "GET",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{jwtToken}}",
+                                        "description": "Your WordPress JWT access token. User ID is extracted from this token automatically.",
+                                        "type": "text"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/leaves/balances?year=2026",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "leaves",
+                                        "balances"
+                                    ],
+                                    "query": [
+                                        {
+                                            "key": "year",
+                                            "value": "2026",
+                                            "description": "Year to fetch balances for"
+                                        },
+                                        {
+                                            "key": "employee_id",
+                                            "value": "101",
+                                            "description": "Optional. View another employee's balance. Admin/HR can view any; Leaders can view their direct reports.",
+                                            "disabled": true
+                                        }
+                                    ]
+                                },
+                                "description": "Fetch leave balances for the authenticated user (from JWT token). Admin/HR can pass `employee_id` to view any employee's balance. Leaders can view their direct reports."
+                            },
+                            "response": []
+                        },
+                        {
+                            "name": "Get Leave Balances for Specific Employee",
+                            "request": {
+                                "method": "GET",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{jwtToken}}",
+                                        "description": "JWT token of an Admin, HR, or Leader user. Admin/HR can view any employee; Leaders can view their direct reports.",
+                                        "type": "text"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/leaves/balances?year=2026&employee_id=5",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "leaves",
+                                        "balances"
+                                    ],
+                                    "query": [
+                                        {
+                                            "key": "year",
+                                            "value": "2026",
+                                            "description": "Year to fetch balances for"
+                                        },
+                                        {
+                                            "key": "employee_id",
+                                            "value": "5",
+                                            "description": "Employee ID to inspect"
+                                        }
+                                    ]
+                                },
+                                "description": "Fetch leave balances for a specific employee. Admin/HR can view any employee. Leaders can view their direct reports only."
+                            },
+                            "response": []
+                        },
+                        {
+                            "name": "Configure Leave Balance (Admin/HR Only)",
+                            "request": {
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{jwtToken}}",
+                                        "description": "Must be a JWT token belonging to an Admin or HR user.",
+                                        "type": "text"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json",
+                                        "type": "text"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"employee_id\": 101,\n  \"leave_type\": \"Casual Leave\",\n  \"year\": 2026,\n  \"total_allotted\": 10.00\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                },
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/leaves/balances",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "leaves",
+                                        "balances"
+                                    ]
+                                },
+                                "description": "Sets or updates the total leave days allotted for a specific employee, leave type, and year. Restricted to Admin and HR roles only."
+                            },
+                            "response": []
+                        }
+                    ]
                 },
-                "description": "Fetch leave balances for the authenticated user (from JWT token). Admin/HR can pass `employee_id` to view any employee's balance. Leaders can view their direct reports."
-              },
-              "response": []
-            },
-            {
-              "name": "Get Leave Balances for Specific Employee",
-              "request": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{jwtToken}}",
-                    "description": "JWT token of an Admin, HR, or Leader user. Admin/HR can view any employee; Leaders can view their direct reports.",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/api/leaves/balances?year=2026&employee_id=5",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "leaves",
-                    "balances"
-                  ],
-                  "query": [
-                    {
-                      "key": "year",
-                      "value": "2026",
-                      "description": "Year to fetch balances for"
-                    },
-                    {
-                      "key": "employee_id",
-                      "value": "5",
-                      "description": "Employee ID to inspect"
-                    }
-                  ]
+                {
+                    "name": "Leave Applications",
+                    "item": [
+                        {
+                            "name": "Apply for Leave (Full Day)",
+                            "request": {
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{jwtToken}}",
+                                        "description": "JWT token of the employee applying for leave. Employee ID is taken from this token.",
+                                        "type": "text"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json",
+                                        "type": "text"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"leave_type\": \"CL\",\n  \"start_date\": \"2026-07-01\",\n  \"end_date\": \"2026-07-03\",\n  \"reason\": \"Going to family wedding\",\n  \"day_type\": \"full_day\"\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                },
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/leaves",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "leaves"
+                                    ]
+                                },
+                                "description": "Apply for full-day leave. Use the leave type SHORT FORM as `leave_type` (e.g. \"CL\" for Casual Leave, \"SL\" for Sick Leave). The full name is also accepted. Working days are auto-calculated (weekends & holidays excluded). Validates leave type against policy and checks remaining balance. Sends Level 1 approval email to the employee's assigned leader."
+                            },
+                            "response": []
+                        },
+                        {
+                            "name": "Apply for Leave (Half Day)",
+                            "request": {
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{jwtToken}}",
+                                        "description": "JWT token of the employee applying for leave. Employee ID is taken from this token.",
+                                        "type": "text"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json",
+                                        "type": "text"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"leave_type\": \"CL\",\n  \"start_date\": \"2026-07-05\",\n  \"end_date\": \"2026-07-05\",\n  \"reason\": \"Dentist appointment\",\n  \"day_type\": \"half_day\",\n  \"half_day_period\": \"first_half\"\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                },
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/leaves",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "leaves"
+                                    ]
+                                },
+                                "description": "Apply for a half-day leave. Use the leave type SHORT FORM as `leave_type` (e.g. \"CL\"). `start_date` and `end_date` must be the same date. `half_day_period` must be `first_half` or `second_half`. Counts as 0.5 days against balance."
+                            },
+                            "response": []
+                        },
+                        {
+                            "name": "Apply for Early Leave",
+                            "request": {
+                                "method": "POST",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{jwtToken}}",
+                                        "description": "JWT token of the employee applying for leave. Employee ID is taken from this token.",
+                                        "type": "text"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json",
+                                        "type": "text"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"leave_type\": \"EL\",\n  \"start_date\": \"2026-06-24\",\n  \"end_date\": \"2026-06-24\",\n  \"reason\": \"Need to leave early for a personal errand\",\n  \"day_type\": \"full_day\",\n  \"compensate_date\": \"2026-06-26\"\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                },
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/leaves",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "leaves"
+                                    ]
+                                },
+                                "description": "Apply for Early Leave as a fixed 2-hour request (0.25 day). Use `day_type: \"full_day\"` only, do not send a half-day period, and provide `compensate_date` within the same week or the following week of the leave date. Only one Early Leave is allowed per month."
+                            },
+                            "response": []
+                        },
+                        {
+                            "name": "Cancel Leave Request",
+                            "request": {
+                                "method": "PUT",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{jwtToken}}",
+                                        "description": "JWT token of the employee who owns the leave request.",
+                                        "type": "text"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/leaves/1/cancel",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "leaves",
+                                        "1",
+                                        "cancel"
+                                    ]
+                                },
+                                "description": "Cancel a pending or partially approved leave request owned by the authenticated employee. The request status is updated to cancelled."
+                            },
+                            "response": []
+                        },
+                        {
+                            "name": "Update Leave Request",
+                            "request": {
+                                "method": "PUT",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{jwtToken}}",
+                                        "description": "JWT token of the employee who owns the leave request.",
+                                        "type": "text"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json",
+                                        "type": "text"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"leave_type\": \"CL\",\n  \"start_date\": \"2026-07-06\",\n  \"end_date\": \"2026-07-07\",\n  \"reason\": \"Updated reason for leave\",\n  \"day_type\": \"full_day\"\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                },
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/leaves/1",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "leaves",
+                                        "1"
+                                    ]
+                                },
+                                "description": "Update an existing leave request. The owner can change leave type, date range, and reason. The backend recalculates the duration and sends the request for re-review."
+                            },
+                            "response": []
+                        }
+                    ]
                 },
-                "description": "Fetch leave balances for a specific employee. Admin/HR can view any employee. Leaders can view their direct reports only."
-              },
-              "response": []
-            },
-            {
-              "name": "Configure Leave Balance (Admin/HR Only)",
-              "request": {
+                {
+                    "name": "Dashboard & Reports",
+                    "item": [
+                        {
+                            "name": "Get Leave Reports",
+                            "request": {
+                                "method": "GET",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{jwtToken}}",
+                                        "description": "JWT token controls report scope: HR/Admin sees all, Leader sees their team, Employee sees only their own.",
+                                        "type": "text"
+                                    }
+                                ],
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/leaves/report?status=pending",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "leaves",
+                                        "report"
+                                    ],
+                                    "query": [
+                                        {
+                                            "key": "status",
+                                            "value": "pending",
+                                            "description": "Filter by status: pending, partially_approved, approved, rejected"
+                                        },
+                                        {
+                                            "key": "employee_id",
+                                            "value": "101",
+                                            "description": "Filter by specific employee (Admin/HR/Leader only)",
+                                            "disabled": true
+                                        },
+                                        {
+                                            "key": "start_date",
+                                            "value": "2026-01-01",
+                                            "description": "Filter leaves starting on or after this date",
+                                            "disabled": true
+                                        },
+                                        {
+                                            "key": "end_date",
+                                            "value": "2026-12-31",
+                                            "description": "Filter leaves ending on or before this date",
+                                            "disabled": true
+                                        }
+                                    ]
+                                },
+                                "description": "Fetch leave records with role-based filtering:\n- **Admin/HR**: See all employees' leaves\n- **Leader**: See own leaves + direct reports' leaves\n- **Employee/Sales**: See only own leaves"
+                            },
+                            "response": []
+                        }
+                    ]
+                },
+                {
+                    "name": "Approval Workflow",
+                    "item": [
+                        {
+                            "name": "Level 1: Leader Approve",
+                            "request": {
+                                "method": "PUT",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{jwtToken}}",
+                                        "description": "JWT token of the Leader who is the assigned approver for this leave request.",
+                                        "type": "text"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json",
+                                        "type": "text"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"status\": \"approved\"\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                },
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/leaves/1/approve-leader",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "leaves",
+                                        "1",
+                                        "approve-leader"
+                                    ]
+                                },
+                                "description": "Level 1 leader approval. The JWT token must belong to the leader assigned to this leave request (`leader_id` column). Sets status to `partially_approved` and notifies HR for Level 2 review.\n\n\u26a0\ufe0f Can be reversed (approved \u2194 rejected) as long as HR has not yet processed it."
+                            },
+                            "response": []
+                        },
+                        {
+                            "name": "Level 1: Leader Reject",
+                            "request": {
+                                "method": "PUT",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{jwtToken}}",
+                                        "description": "JWT token of the Leader who is the assigned approver for this leave request.",
+                                        "type": "text"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json",
+                                        "type": "text"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"status\": \"rejected\",\n  \"reason\": \"We have key deliveries scheduled during this period.\"\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                },
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/leaves/1/approve-leader",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "leaves",
+                                        "1",
+                                        "approve-leader"
+                                    ]
+                                },
+                                "description": "Level 1 leader rejection. Sets overall status to `rejected` and notifies the employee. Can be changed back to `approved` if HR hasn't finalised yet."
+                            },
+                            "response": []
+                        },
+                        {
+                            "name": "Level 2: HR Approve",
+                            "request": {
+                                "method": "PUT",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{jwtToken}}",
+                                        "description": "JWT token of an HR or Admin user.",
+                                        "type": "text"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json",
+                                        "type": "text"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"status\": \"approved\"\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                },
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/leaves/1/approve-hr",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "leaves",
+                                        "1",
+                                        "approve-hr"
+                                    ]
+                                },
+                                "description": "Level 2 HR final approval. **Requires leader_status = 'approved' first.** Deducts the leave days from the employee's balance and sends them a confirmation email."
+                            },
+                            "response": []
+                        },
+                        {
+                            "name": "Level 2: HR Reject",
+                            "request": {
+                                "method": "PUT",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{jwtToken}}",
+                                        "description": "JWT token of an HR or Admin user.",
+                                        "type": "text"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json",
+                                        "type": "text"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"status\": \"rejected\",\n  \"reason\": \"Policy limitation: maximum consecutive leave days exceeded.\"\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                },
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/leaves/1/approve-hr",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "leaves",
+                                        "1",
+                                        "approve-hr"
+                                    ]
+                                },
+                                "description": "Level 2 HR rejection. Sets final status to `rejected` and emails the rejection reason to the employee."
+                            },
+                            "response": []
+                        },
+                        {
+                            "name": "Admin Final Approve (Immediate Final Decision)",
+                            "request": {
+                                "method": "PUT",
+                                "header": [
+                                    {
+                                        "key": "Authorization",
+                                        "value": "Bearer {{jwtToken}}",
+                                        "description": "JWT token of an administrator user.",
+                                        "type": "text"
+                                    },
+                                    {
+                                        "key": "Content-Type",
+                                        "value": "application/json",
+                                        "type": "text"
+                                    }
+                                ],
+                                "body": {
+                                    "mode": "raw",
+                                    "raw": "{\n  \"status\": \"approved\"\n}",
+                                    "options": {
+                                        "raw": {
+                                            "language": "json"
+                                        }
+                                    }
+                                },
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/leaves/1/approve-leader",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "leaves",
+                                        "1",
+                                        "approve-leader"
+                                    ]
+                                },
+                                "description": "Administrator approval using the existing leader approval endpoint. When the JWT belongs to an administrator, this decision is saved as a final approved/rejected state immediately."
+                            },
+                            "response": []
+                        },
+                        {
+                            "name": "Action Link (one-click token) - GET",
+                            "request": {
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{baseUrl}}/api/leaves/1/action?token=<token>&decision=approved",
+                                    "host": [
+                                        "{{baseUrl}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "leaves",
+                                        "1",
+                                        "action"
+                                    ],
+                                    "query": [
+                                        {
+                                            "key": "token",
+                                            "value": "<token>",
+                                            "description": "HMAC token generated in emails"
+                                        },
+                                        {
+                                            "key": "decision",
+                                            "value": "approved",
+                                            "description": "approved or rejected"
+                                        }
+                                    ]
+                                },
+                                "description": "One-click action link used by Leader or HR in email notifications. No Authorization header is required because the token encodes and authorizes the action."
+                            },
+                            "response": []
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "Profile APIs",
+            "item": [
+                {
+                    "name": "Get My Profile",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{jwtToken}}",
+                                "description": "JWT token of the authenticated employee whose profile is being fetched.",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/profile",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "profile"
+                            ]
+                        },
+                        "description": "Fetch the authenticated user's profile details including email, joining date, bio max id, birthday date, profile icon attachment, and calculated tenure duration."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Get Profile for Specific User",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{jwtToken}}",
+                                "description": "JWT token of an Admin, HR, or Leader user.",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/profile?user_id=5",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "profile"
+                            ],
+                            "query": [
+                                {
+                                    "key": "user_id",
+                                    "value": "5",
+                                    "description": "User ID to fetch profile for"
+                                }
+                            ]
+                        },
+                        "description": "Fetch the profile for a specific user. Admin/HR can view any profile. Leaders can view their direct reports' profiles."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Update My Profile",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{jwtToken}}",
+                                "description": "JWT token of the authenticated employee whose profile is being updated.",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"email\": \"user@example.com\",\n  \"display_name\": \"Test User\",\n  \"joining_date\": \"2026-06-22\",\n  \"bio_max_id\": \"123546\",\n  \"birthday_date\": \"2014-01-07\",\n  \"profile_icon_base64\": \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUA...\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{baseUrl}}/api/profile",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "profile"
+                            ]
+                        },
+                        "description": "Update the authenticated user's profile. This request accepts base64 image data via `profile_icon_base64`. You may also send `profile_icon_url` or `profile_icon` if it contains base64 data. The backend will save the image as a WordPress media attachment."
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Holiday APIs",
+            "item": [
+                {
+                    "name": "Get Holiday List By Year",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/holidays?year=2026",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "holidays"
+                            ],
+                            "query": [
+                                {
+                                    "key": "year",
+                                    "value": "2026",
+                                    "description": "Year to fetch holidays for"
+                                }
+                            ]
+                        },
+                        "description": "Fetch all holidays for a specific year. Returns the holiday records stored for that year."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Get All Holiday Lists",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/holidays/all",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "holidays",
+                                "all"
+                            ]
+                        },
+                        "description": "Fetch all holiday lists grouped by year."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Get Upcoming Holidays",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/api/holidays/upcoming?limit=5",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "api",
+                                "holidays",
+                                "upcoming"
+                            ],
+                            "query": [
+                                {
+                                    "key": "limit",
+                                    "value": "5",
+                                    "description": "Maximum number of upcoming holidays to return"
+                                },
+                                {
+                                    "key": "date",
+                                    "value": "2026-06-22",
+                                    "description": "Optional date to start the upcoming search from",
+                                    "disabled": true
+                                }
+                            ]
+                        },
+                        "description": "Fetch the next upcoming holidays from today (or from the provided date)."
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "Apply Leave On Behalf (HR/Admin)",
+            "request": {
                 "method": "POST",
                 "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{jwtToken}}",
-                    "description": "Must be a JWT token belonging to an Admin or HR user.",
-                    "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"employee_id\": 101,\n  \"leave_type\": \"Casual Leave\",\n  \"year\": 2026,\n  \"total_allotted\": 10.00\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/leaves/balances",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "leaves",
-                    "balances"
-                  ]
-                },
-                "description": "Sets or updates the total leave days allotted for a specific employee, leave type, and year. Restricted to Admin and HR roles only."
-              },
-              "response": []
-            }
-          ]
-        },
-        {
-          "name": "Leave Applications",
-          "item": [
-            {
-              "name": "Apply for Leave (Full Day)",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{jwtToken}}",
-                    "description": "JWT token of the employee applying for leave. Employee ID is taken from this token.",
-                    "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"leave_type\": \"CL\",\n  \"start_date\": \"2026-07-01\",\n  \"end_date\": \"2026-07-03\",\n  \"reason\": \"Going to family wedding\",\n  \"day_type\": \"full_day\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/leaves",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "leaves"
-                  ]
-                },
-                "description": "Apply for full-day leave. Use the leave type SHORT FORM as `leave_type` (e.g. \"CL\" for Casual Leave, \"SL\" for Sick Leave). The full name is also accepted. Working days are auto-calculated (weekends & holidays excluded). Validates leave type against policy and checks remaining balance. Sends Level 1 approval email to the employee's assigned leader."
-              },
-              "response": []
-            },
-            {
-              "name": "Apply for Leave (Half Day)",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{jwtToken}}",
-                    "description": "JWT token of the employee applying for leave. Employee ID is taken from this token.",
-                    "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"leave_type\": \"CL\",\n  \"start_date\": \"2026-07-05\",\n  \"end_date\": \"2026-07-05\",\n  \"reason\": \"Dentist appointment\",\n  \"day_type\": \"half_day\",\n  \"half_day_period\": \"first_half\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/leaves",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "leaves"
-                  ]
-                },
-                "description": "Apply for a half-day leave. Use the leave type SHORT FORM as `leave_type` (e.g. \"CL\"). `start_date` and `end_date` must be the same date. `half_day_period` must be `first_half` or `second_half`. Counts as 0.5 days against balance."
-              },
-              "response": []
-            },
-            {
-              "name": "Apply for Early Leave",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{jwtToken}}",
-                    "description": "JWT token of the employee applying for leave. Employee ID is taken from this token.",
-                    "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"leave_type\": \"EL\",\n  \"start_date\": \"2026-06-24\",\n  \"end_date\": \"2026-06-24\",\n  \"reason\": \"Need to leave early for a personal errand\",\n  \"day_type\": \"full_day\",\n  \"compensate_date\": \"2026-06-26\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/leaves",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "leaves"
-                  ]
-                },
-                "description": "Apply for Early Leave as a fixed 2-hour request (0.25 day). Use `day_type: \"full_day\"` only, do not send a half-day period, and provide `compensate_date` within the same week or the following week of the leave date. Only one Early Leave is allowed per month."
-              },
-              "response": []
-            },
-            {
-              "name": "Cancel Leave Request",
-              "request": {
-                "method": "PUT",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{jwtToken}}",
-                    "description": "JWT token of the employee who owns the leave request.",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/api/leaves/1/cancel",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "leaves",
-                    "1",
-                    "cancel"
-                  ]
-                },
-                "description": "Cancel a pending or partially approved leave request owned by the authenticated employee. The request status is updated to cancelled."
-              },
-              "response": []
-            },
-            {
-              "name": "Update Leave Request",
-              "request": {
-                "method": "PUT",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{jwtToken}}",
-                    "description": "JWT token of the employee who owns the leave request.",
-                    "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"leave_type\": \"CL\",\n  \"start_date\": \"2026-07-06\",\n  \"end_date\": \"2026-07-07\",\n  \"reason\": \"Updated reason for leave\",\n  \"day_type\": \"full_day\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/leaves/1",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "leaves",
-                    "1"
-                  ]
-                },
-                "description": "Update an existing leave request. The owner can change leave type, date range, and reason. The backend recalculates the duration and sends the request for re-review."
-              },
-              "response": []
-            }
-          ]
-        },
-        {
-          "name": "Dashboard & Reports",
-          "item": [
-            {
-              "name": "Get Leave Reports",
-              "request": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{jwtToken}}",
-                    "description": "JWT token controls report scope: HR/Admin sees all, Leader sees their team, Employee sees only their own.",
-                    "type": "text"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/api/leaves/report?status=pending",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "leaves",
-                    "report"
-                  ],
-                  "query": [
                     {
-                      "key": "status",
-                      "value": "pending",
-                      "description": "Filter by status: pending, partially_approved, approved, rejected"
-                    },
-                    {
-                      "key": "employee_id",
-                      "value": "101",
-                      "description": "Filter by specific employee (Admin/HR/Leader only)",
-                      "disabled": true
-                    },
-                    {
-                      "key": "start_date",
-                      "value": "2026-01-01",
-                      "description": "Filter leaves starting on or after this date",
-                      "disabled": true
-                    },
-                    {
-                      "key": "end_date",
-                      "value": "2026-12-31",
-                      "description": "Filter leaves ending on or before this date",
-                      "disabled": true
+                        "key": "Authorization",
+                        "value": "Bearer {{admin_token}}",
+                        "type": "text"
                     }
-                  ]
-                },
-                "description": "Fetch leave records with role-based filtering:\n- **Admin/HR**: See all employees' leaves\n- **Leader**: See own leaves + direct reports' leaves\n- **Employee/Sales**: See only own leaves"
-              },
-              "response": []
-            }
-          ]
-        },
-        {
-          "name": "Approval Workflow",
-          "item": [
-            {
-              "name": "Level 1: Leader Approve",
-              "request": {
-                "method": "PUT",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{jwtToken}}",
-                    "description": "JWT token of the Leader who is the assigned approver for this leave request.",
-                    "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
                 ],
                 "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"status\": \"approved\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
+                    "mode": "raw",
+                    "raw": "{\n  \"employee_id\": 2,\n  \"leave_type\": \"CL\",\n  \"start_date\": \"2026-08-15\",\n  \"end_date\": \"2026-08-15\",\n  \"day_type\": \"full_day\",\n  \"reason\": \"Medical emergency\",\n  \"cc_emails\": [\"hr.manager@example.com\"]\n}",
+                    "options": {
+                        "raw": {
+                            "language": "json"
+                        }
                     }
-                  }
                 },
                 "url": {
-                  "raw": "{{baseUrl}}/api/leaves/1/approve-leader",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "leaves",
-                    "1",
-                    "approve-leader"
-                  ]
+                    "raw": "{{base_url}}/leaves/apply-on-behalf",
+                    "host": [
+                        "{{base_url}}"
+                    ],
+                    "path": [
+                        "leaves",
+                        "apply-on-behalf"
+                    ]
                 },
-                "description": "Level 1 leader approval. The JWT token must belong to the leader assigned to this leave request (`leader_id` column). Sets status to `partially_approved` and notifies HR for Level 2 review.\n\n⚠️ Can be reversed (approved ↔ rejected) as long as HR has not yet processed it."
-              },
-              "response": []
+                "description": "Allows HR or Administrator to apply for leave on behalf of an employee. It auto-approves the leave and sends a notification."
             },
-            {
-              "name": "Level 1: Leader Reject",
-              "request": {
-                "method": "PUT",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{jwtToken}}",
-                    "description": "JWT token of the Leader who is the assigned approver for this leave request.",
-                    "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"status\": \"rejected\",\n  \"reason\": \"We have key deliveries scheduled during this period.\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/leaves/1/approve-leader",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "leaves",
-                    "1",
-                    "approve-leader"
-                  ]
-                },
-                "description": "Level 1 leader rejection. Sets overall status to `rejected` and notifies the employee. Can be changed back to `approved` if HR hasn't finalised yet."
-              },
-              "response": []
-            },
-            {
-              "name": "Level 2: HR Approve",
-              "request": {
-                "method": "PUT",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{jwtToken}}",
-                    "description": "JWT token of an HR or Admin user.",
-                    "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"status\": \"approved\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/leaves/1/approve-hr",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "leaves",
-                    "1",
-                    "approve-hr"
-                  ]
-                },
-                "description": "Level 2 HR final approval. **Requires leader_status = 'approved' first.** Deducts the leave days from the employee's balance and sends them a confirmation email."
-              },
-              "response": []
-            },
-            {
-              "name": "Level 2: HR Reject",
-              "request": {
-                "method": "PUT",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{jwtToken}}",
-                    "description": "JWT token of an HR or Admin user.",
-                    "type": "text"
-                  },
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json",
-                    "type": "text"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"status\": \"rejected\",\n  \"reason\": \"Policy limitation: maximum consecutive leave days exceeded.\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/leaves/1/approve-hr",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "leaves",
-                    "1",
-                    "approve-hr"
-                  ]
-                },
-                "description": "Level 2 HR rejection. Sets final status to `rejected` and emails the rejection reason to the employee."
-              },
-              "response": []
-            },
-            {
-              "name": "Action Link (one-click token) - GET",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{baseUrl}}/api/leaves/1/action?token=<token>&decision=approved",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "leaves",
-                    "1",
-                    "action"
-                  ],
-                  "query": [
-                    {
-                      "key": "token",
-                      "value": "<token>",
-                      "description": "HMAC token generated in emails"
-                    },
-                    {
-                      "key": "decision",
-                      "value": "approved",
-                      "description": "approved or rejected"
-                    }
-                  ]
-                },
-                "description": "One-click action link used by Leader or HR in email notifications. No Authorization header is required because the token encodes and authorizes the action."
-              },
-              "response": []
-            }
-          ]
+            "response": []
         }
-      ]
-    },
-    {
-      "name": "Profile APIs",
-      "item": [
+    ],
+    "variable": [
         {
-          "name": "Get My Profile",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{jwtToken}}",
-                "description": "JWT token of the authenticated employee whose profile is being fetched.",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/profile",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "profile"
-              ]
-            },
-            "description": "Fetch the authenticated user's profile details including email, joining date, bio max id, birthday date, profile icon attachment, and calculated tenure duration."
-          },
-          "response": []
+            "key": "baseUrl",
+            "value": "http://localhost:3000",
+            "type": "string",
+            "description": "Base URL of the HRMS API server"
         },
         {
-          "name": "Get Profile for Specific User",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{jwtToken}}",
-                "description": "JWT token of an Admin, HR, or Leader user.",
-                "type": "text"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/profile?user_id=5",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "profile"
-              ],
-              "query": [
-                {
-                  "key": "user_id",
-                  "value": "5",
-                  "description": "User ID to fetch profile for"
-                }
-              ]
-            },
-            "description": "Fetch the profile for a specific user. Admin/HR can view any profile. Leaders can view their direct reports' profiles."
-          },
-          "response": []
-        },
-        {
-          "name": "Update My Profile",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{jwtToken}}",
-                "description": "JWT token of the authenticated employee whose profile is being updated.",
-                "type": "text"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"user@example.com\",\n  \"display_name\": \"Test User\",\n  \"joining_date\": \"2026-06-22\",\n  \"bio_max_id\": \"123546\",\n  \"birthday_date\": \"2014-01-07\",\n  \"profile_icon_base64\": \"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUA...\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/profile",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "profile"
-              ]
-            },
-            "description": "Update the authenticated user's profile. This request accepts base64 image data via `profile_icon_base64`. You may also send `profile_icon_url` or `profile_icon` if it contains base64 data. The backend will save the image as a WordPress media attachment."
-          },
-          "response": []
+            "key": "jwtToken",
+            "value": "YOUR_JWT_TOKEN_HERE",
+            "type": "string",
+            "description": "WordPress JWT access token. Paste your token here and all requests will use it automatically."
         }
-      ]
-    },
-    {
-      "name": "Holiday APIs",
-      "item": [
-        {
-          "name": "Get Holiday List By Year",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/holidays?year=2026",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "holidays"
-              ],
-              "query": [
-                {
-                  "key": "year",
-                  "value": "2026",
-                  "description": "Year to fetch holidays for"
-                }
-              ]
-            },
-            "description": "Fetch all holidays for a specific year. Returns the holiday records stored for that year."
-          },
-          "response": []
-        },
-        {
-          "name": "Get All Holiday Lists",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/holidays/all",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "holidays",
-                "all"
-              ]
-            },
-            "description": "Fetch all holiday lists grouped by year."
-          },
-          "response": []
-        },
-        {
-          "name": "Get Upcoming Holidays",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/holidays/upcoming?limit=5",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "holidays",
-                "upcoming"
-              ],
-              "query": [
-                {
-                  "key": "limit",
-                  "value": "5",
-                  "description": "Maximum number of upcoming holidays to return"
-                },
-                {
-                  "key": "date",
-                  "value": "2026-06-22",
-                  "description": "Optional date to start the upcoming search from",
-                  "disabled": true
-                }
-              ]
-            },
-            "description": "Fetch the next upcoming holidays from today (or from the provided date)."
-          },
-          "response": []
-        }
-      ]
-    }
-  ],
-  "variable": [
-    {
-      "key": "baseUrl",
-      "value": "http://localhost:3000",
-      "type": "string",
-      "description": "Base URL of the HRMS API server"
-    },
-    {
-      "key": "jwtToken",
-      "value": "YOUR_JWT_TOKEN_HERE",
-      "type": "string",
-      "description": "WordPress JWT access token. Paste your token here and all requests will use it automatically."
-    }
-  ]
+    ]
 }

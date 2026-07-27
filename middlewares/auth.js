@@ -2,6 +2,17 @@
 const jwt = require('jsonwebtoken');
 const pool = require('../config/database');
 
+const hasDatabaseConfig = () => {
+  return Boolean(process.env.DB_HOST && process.env.DB_USER && process.env.DB_PASSWORD && process.env.DB_NAME);
+};
+
+const sendAuthUnavailable = (res, detail = '') => {
+  if (detail) {
+    console.error(`[Auth] ${detail}`);
+  }
+  return res.status(503).json({ error: 'Authentication service is temporarily unavailable. Please try again later.' });
+};
+
 /**
  * Extract and validate JWT token from Authorization header.
  * Mirrors the WordPress st_get_user_id_from_token() function in st-auth-functions.php:
@@ -132,7 +143,11 @@ const authenticate = async (req, res, next) => {
     const userId = tokenResult.user_id;
     console.log(`[Auth] Token valid — User ID from token: ${userId}`);
 
-    // Step 2: Verify user exists in the WordPress DB and fetch role
+    if (!hasDatabaseConfig()) {
+      return sendAuthUnavailable(res, 'Database credentials are not configured for authentication.');
+    }
+
+    // Step 2: Verify user exists in WordPress DB and fetch role
     const query = `
       SELECT u.ID, u.user_email, u.display_name, 
              (SELECT meta_value FROM wp_usermeta WHERE user_id = u.ID AND meta_key = 'wp_capabilities' LIMIT 1) AS capabilities,
@@ -141,7 +156,12 @@ const authenticate = async (req, res, next) => {
       WHERE u.ID = ?
     `;
 
-    const [rows] = await pool.query(query, [userId]);
+    let rows;
+    try {
+      [rows] = await pool.query(query, [userId]);
+    } catch (dbError) {
+      return sendAuthUnavailable(res, `Database query failed during authentication: ${dbError.code || 'UNKNOWN'} ${dbError.message}`);
+    }
 
     if (rows.length === 0) {
       console.warn(`[Auth] REJECTED — User ID ${userId} not found in database.`);
@@ -178,7 +198,7 @@ const authenticate = async (req, res, next) => {
     next();
   } catch (err) {
     console.error('[Auth] Middleware error:', err);
-    return res.status(500).json({ error: 'Internal server error during authentication.' });
+    return sendAuthUnavailable(res, `Authentication middleware failed: ${err.message}`);
   }
 };
 
@@ -222,6 +242,10 @@ const authenticateOrRedirect = async (req, res, next) => {
     const userId = tokenResult.user_id;
     console.log(`[Auth] Token valid — User ID from token: ${userId}`);
 
+    if (!hasDatabaseConfig()) {
+      return sendAuthUnavailable(res, 'Database credentials are not configured for authentication redirect flow.');
+    }
+
     const query = `
       SELECT u.ID, u.user_email, u.display_name, 
              (SELECT meta_value FROM wp_usermeta WHERE user_id = u.ID AND meta_key = 'wp_capabilities' LIMIT 1) AS capabilities,
@@ -230,7 +254,12 @@ const authenticateOrRedirect = async (req, res, next) => {
       WHERE u.ID = ?
     `;
 
-    const [rows] = await pool.query(query, [userId]);
+    let rows;
+    try {
+      [rows] = await pool.query(query, [userId]);
+    } catch (dbError) {
+      return sendAuthUnavailable(res, `Database query failed during redirect authentication: ${dbError.code || 'UNKNOWN'} ${dbError.message}`);
+    }
     if (rows.length === 0) {
       console.warn(`[Auth] REJECTED — User ID ${userId} not found in database.`);
       const loginPage = process.env.APP_LOGIN_URL || `${process.env.APP_BASE_URL || process.env.APP_URL || 'http://localhost:3000'}/login`;
@@ -266,8 +295,8 @@ const authenticateOrRedirect = async (req, res, next) => {
     next();
   } catch (err) {
     console.error('[Auth] Redirect auth error:', err);
-    return res.status(500).json({ error: 'Internal server error during authentication redirect handling.' });
+    return sendAuthUnavailable(res, `Redirect authentication middleware failed: ${err.message}`);
   }
 };
 
-module.exports = { authenticate, authorize, authenticateOrRedirect, canAccessTargetUser };
+module.exports = { authenticate, authorize, authenticateOrRedirect, canAccessTargetUser, hasDatabaseConfig };
