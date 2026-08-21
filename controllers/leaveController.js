@@ -579,9 +579,8 @@ const ensureMonthlyClAccrual = async (balanceRow, employeeId, year, annualCap = 
  * Helper to calculate working days between start and end date (inclusive),
  * excluding weekends (Saturdays & Sundays) and holidays from wp_st_holiday_list.
  */
-const calculateWorkingDays = async (startDateStr, endDateStr) => {
+const getHolidayDatesForRange = async (startDateStr, endDateStr) => {
   const holidayDates = [];
-
   try {
     const query = `
       SELECT holiday_date 
@@ -591,7 +590,6 @@ const calculateWorkingDays = async (startDateStr, endDateStr) => {
     const [rows] = await pool.query(query, [startDateStr, endDateStr]);
     holidayDates.push(...rows.map((row) => row.holiday_date));
   } catch (err) {
-    // If column is 'date' instead of 'holiday_date', try 'date'
     try {
       const query = `
         SELECT date 
@@ -604,7 +602,11 @@ const calculateWorkingDays = async (startDateStr, endDateStr) => {
       console.warn('[Calculation] Holiday list lookup skipped/failed (using weekends exclusion only):', err2.message);
     }
   }
+  return holidayDates;
+};
 
+const calculateWorkingDays = async (startDateStr, endDateStr) => {
+  const holidayDates = await getHolidayDatesForRange(startDateStr, endDateStr);
   return countLeaveDaysForRange(startDateStr, endDateStr, holidayDates);
 };
 
@@ -1365,7 +1367,8 @@ exports.updateLeave = async (req, res) => {
       if (start > end) {
         return res.status(400).json({ error: 'Start date cannot be after end date' });
       }
-      const leaveBreakdown = calculateLeaveDayBreakdown(start_date, end_date, canonicalLeaveType);
+      const holidayDates = await getHolidayDatesForRange(start_date, end_date);
+      const leaveBreakdown = calculateLeaveDayBreakdown(start_date, end_date, canonicalLeaveType, holidayDates);
       requestedDays = leaveBreakdown.totalDays;
       requestedPaidDays = leaveBreakdown.paidDays;
       requestedLwpDays = leaveBreakdown.lwpDays;
@@ -1483,18 +1486,41 @@ exports.updateLeave = async (req, res) => {
       const balanceRow = await getOrCreateLeaveBalanceRow(employee.id, startYear);
       const balanceEntry = balanceRow.balanceJson[matchedLeaveType];
       const remainingDays = getLeaveEntryRemaining(balanceEntry, matchedLeaveType);
+      
+      if (matchedLeaveType !== 'EL' && remainingDays !== null) {
+        let maxAvailable = remainingDays;
+        if (matchedLeaveType === CL_TYPE) {
+           const monthlyAvailable = parseFloat(balanceEntry?.monthly_available || 0);
+           maxAvailable = Math.min(monthlyAvailable, remainingDays);
+        }
+        if (effectivePaidDays > maxAvailable) {
+          return res.status(400).json({
+            error: `Insufficient ${matchedLeaveType} balance. Requested paid days: ${effectivePaidDays} days, Available: ${maxAvailable} days.`
+          });
+        }
+      }
+
       const monthlyAvailable = parseFloat(balanceEntry?.monthly_available || 0);
       const effectiveClAvailable = Math.min(monthlyAvailable, remainingDays);
-      cl_days_charged = Math.min(effectivePaidDays, effectiveClAvailable);
-      extra_lwp_days = effectiveLwpDays + Math.max(0, effectivePaidDays - cl_days_charged);
+      cl_days_charged = effectivePaidDays;
+      extra_lwp_days = effectiveLwpDays;
     } else if (matchedLeaveType === 'SL') {
       const balanceRow = await getOrCreateLeaveBalanceRow(employee.id, startYear);
       const balanceEntry = balanceRow.balanceJson[matchedLeaveType];
       const remainingDays = getLeaveEntryRemaining(balanceEntry, matchedLeaveType);
+      
+      if (matchedLeaveType !== 'EL' && remainingDays !== null) {
+        if (effectivePaidDays > remainingDays) {
+          return res.status(400).json({
+            error: `Insufficient ${matchedLeaveType} balance. Requested paid days: ${effectivePaidDays} days, Available: ${remainingDays} days.`
+          });
+        }
+      }
+
       const availableDays = Math.max(0, remainingDays || 0);
-      const usedFromSlBalance = Math.min(effectivePaidDays, availableDays);
+      const usedFromSlBalance = effectivePaidDays;
       cl_days_charged = usedFromSlBalance;
-      extra_lwp_days = effectiveLwpDays + Math.max(0, effectivePaidDays - usedFromSlBalance);
+      extra_lwp_days = effectiveLwpDays;
     } else if (matchedLeaveType !== 'LWP') {
       extra_lwp_days = effectiveLwpDays;
     }
@@ -1657,6 +1683,65 @@ exports.cancelLeave = async (req, res) => {
       return res.status(409).json({ error: 'Leave request could not be cancelled. It may already be processed or no longer editable.' });
     }
 
+    // Send cancellation notifications asynchronously
+    setImmediate(async () => {
+      try {
+        const [employeeRows] = await pool.query(
+          'SELECT ID, user_email, display_name FROM wp_users WHERE ID = ? LIMIT 1',
+          [employee.id]
+        );
+
+        if (employeeRows.length === 0) {
+          console.warn('[Leave Cancellation] Employee not found for notification:', employee.id);
+          return;
+        }
+
+        const employeeData = employeeRows[0];
+        const employeeName = employeeData.display_name || 'Employee';
+        const employeeEmail = employeeData.user_email;
+
+        // Prepare leave data for notifications
+        const leaveData = {
+          id: existingLeave.id,
+          leave_type: existingLeave.leave_type,
+          leave_type_full: LEAVE_TYPE_FULL_NAME_MAP[existingLeave.leave_type] || existingLeave.leave_type,
+          start_date: existingLeave.start_date,
+          end_date: existingLeave.end_date,
+          days: existingLeave.leave_days,
+          reason: existingLeave.reason,
+          day_type: existingLeave.day_type,
+          half_day_period: existingLeave.half_day_period,
+          status: 'cancelled'
+        };
+
+        // 1. Notify employee (confirmation)
+        await emailService.notifyEmployeeLeaveCancelled(employeeEmail, employeeName, leaveData);
+
+        // 2. Notify HR team
+        const hrEmails = await getHrEmails();
+        for (const hrEmail of hrEmails) {
+          await emailService.notifyHRLeaveCancelled(hrEmail, employeeName, leaveData);
+        }
+
+        // 3. Notify Leader if assigned
+        if (existingLeave.leader_id) {
+          const [leaderRows] = await pool.query(
+            'SELECT user_email, display_name FROM wp_users WHERE ID = ? LIMIT 1',
+            [existingLeave.leader_id]
+          );
+
+          if (leaderRows.length > 0) {
+            const leaderEmail = leaderRows[0].user_email;
+            await emailService.notifyLeaderLeaveCancelled(leaderEmail, employeeName, leaveData);
+          }
+        }
+
+        console.log(`[Leave Cancellation] Notifications sent successfully for leave ID ${leaveId}`);
+      } catch (notificationError) {
+        console.error('[Leave Cancellation] Failed to send notifications:', notificationError);
+      }
+    });
+
     return res.json({
       message: 'Leave request cancelled successfully.',
       leave_id: leaveId,
@@ -1730,7 +1815,8 @@ exports.applyLeave = async (req, res) => {
       if (start > end) {
         return res.status(400).json({ error: 'Start date cannot be after end date' });
       }
-      const leaveBreakdown = calculateLeaveDayBreakdown(start_date, end_date, canonicalLeaveType);
+      const holidayDates = await getHolidayDatesForRange(start_date, end_date);
+      const leaveBreakdown = calculateLeaveDayBreakdown(start_date, end_date, canonicalLeaveType, holidayDates);
       requestedDays = leaveBreakdown.totalDays;
       requestedPaidDays = leaveBreakdown.paidDays;
       requestedLwpDays = leaveBreakdown.lwpDays;
@@ -1894,19 +1980,30 @@ exports.applyLeave = async (req, res) => {
       }
 
       const remainingDays = getLeaveEntryRemaining(balanceEntry, matchedLeaveType);
-      // EL is only allowed when the employee has sufficient EL balance.
-      // Do not convert EL to LWP automatically; reject the request if EL balance is insufficient.
       if (matchedLeaveType === 'EL' && remainingDays !== null && remainingDays < requestedDays) {
         return res.status(400).json({
           error: `Insufficient EL balance. Requested: ${requestedDays} days, Remaining: ${remainingDays} days.`
         });
       }
 
+      if (matchedLeaveType !== 'EL' && remainingDays !== null) {
+        let maxAvailable = remainingDays;
+        if (matchedLeaveType === CL_TYPE) {
+           const monthlyAvailable = parseFloat(balanceEntry.monthly_available || 0);
+           maxAvailable = Math.min(monthlyAvailable, remainingDays);
+        }
+        if (effectivePaidDays > maxAvailable) {
+          return res.status(400).json({
+            error: `Insufficient ${matchedLeaveType} balance. Requested paid days: ${effectivePaidDays} days, Available: ${maxAvailable} days.`
+          });
+        }
+      }
+
       if (matchedLeaveType === CL_TYPE) {
         const monthlyAvailable = parseFloat(balanceEntry.monthly_available || 0);
         const effectiveClAvailable = Math.min(monthlyAvailable, remainingDays);
-        cl_days_charged = Math.min(effectivePaidDays, effectiveClAvailable);
-        extra_lwp_days = effectiveLwpDays + Math.max(0, effectivePaidDays - cl_days_charged);
+        cl_days_charged = effectivePaidDays;
+        extra_lwp_days = effectiveLwpDays;
 
         if (cl_days_charged > 0) {
           balanceEntry.used = parseFloat(balanceEntry.used || 0) + cl_days_charged;
@@ -1915,9 +2012,9 @@ exports.applyLeave = async (req, res) => {
         }
       } else if (matchedLeaveType === 'SL') {
         const availableDays = Math.max(0, remainingDays || 0);
-        const usedFromSlBalance = Math.min(effectivePaidDays, availableDays);
+        const usedFromSlBalance = effectivePaidDays;
         cl_days_charged = usedFromSlBalance;
-        extra_lwp_days = effectiveLwpDays + Math.max(0, effectivePaidDays - usedFromSlBalance);
+        extra_lwp_days = effectiveLwpDays;
 
         if (usedFromSlBalance > 0) {
           balanceEntry.used = parseFloat(balanceEntry.used || 0) + usedFromSlBalance;
@@ -1975,8 +2072,8 @@ exports.applyLeave = async (req, res) => {
 
     // Insert leave request
     const insertQuery = `
-      INSERT INTO wp_hrms_leaves (employee_id, leave_type, start_date, end_date, leave_days, cl_days_charged, extra_lwp_days, reason, day_type, half_day_period, compensate_date, leader_id, leader_status, hr_status, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO wp_hrms_leaves (employee_id, leave_type, start_date, end_date, leave_days, cl_days_charged, extra_lwp_days, reason, day_type, half_day_period, compensate_date, leader_id, leader_status, hr_status, status, applied_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     const [insertResult] = await pool.query(insertQuery, [
       employee.id,
@@ -1994,7 +2091,8 @@ exports.applyLeave = async (req, res) => {
       leaderId,
       leaderStatus,
       hrStatus,
-      overallStatus
+      overallStatus,
+      employee.id
     ]);
 
     const leaveId = insertResult.insertId;
@@ -2096,7 +2194,8 @@ exports.applyLeaveOnBehalf = async (req, res) => {
       const end = new Date(end_date);
       if (start > end) return res.status(400).json({ error: 'Start date cannot be after end date' });
       
-      const leaveBreakdown = calculateLeaveDayBreakdown(start_date, end_date, canonicalLeaveType);
+      const holidayDates = await getHolidayDatesForRange(start_date, end_date);
+      const leaveBreakdown = calculateLeaveDayBreakdown(start_date, end_date, canonicalLeaveType, holidayDates);
       requestedDays = leaveBreakdown.totalDays;
       requestedPaidDays = leaveBreakdown.paidDays;
       requestedLwpDays = leaveBreakdown.lwpDays;
@@ -2177,11 +2276,22 @@ exports.applyLeaveOnBehalf = async (req, res) => {
         return res.status(400).json({ error: `Insufficient EL balance.` });
       }
 
+      if (matchedLeaveType !== 'EL' && remainingDays !== null) {
+        let maxAvailable = remainingDays;
+        if (matchedLeaveType === CL_TYPE) {
+           const monthlyAvailable = parseFloat(balanceEntry.monthly_available || 0);
+           maxAvailable = Math.min(monthlyAvailable, remainingDays);
+        }
+        if (effectivePaidDays > maxAvailable) {
+          return res.status(400).json({ error: `Insufficient ${matchedLeaveType} balance. Requested paid days: ${effectivePaidDays} days, Available: ${maxAvailable} days.` });
+        }
+      }
+
       if (matchedLeaveType === CL_TYPE) {
         const monthlyAvailable = parseFloat(balanceEntry.monthly_available || 0);
         const effectiveClAvailable = Math.min(monthlyAvailable, remainingDays);
-        cl_days_charged = Math.min(effectivePaidDays, effectiveClAvailable);
-        extra_lwp_days = effectiveLwpDays + Math.max(0, effectivePaidDays - cl_days_charged);
+        cl_days_charged = effectivePaidDays;
+        extra_lwp_days = effectiveLwpDays;
         
         if (cl_days_charged > 0) {
           balanceEntry.used = parseFloat(balanceEntry.used || 0) + cl_days_charged;
@@ -2189,17 +2299,17 @@ exports.applyLeaveOnBehalf = async (req, res) => {
         }
       } else if (matchedLeaveType === 'SL') {
         const availableDays = Math.max(0, remainingDays || 0);
-        const usedFromSlBalance = Math.min(effectivePaidDays, availableDays);
+        const usedFromSlBalance = effectivePaidDays;
         cl_days_charged = usedFromSlBalance;
-        extra_lwp_days = effectiveLwpDays + Math.max(0, effectivePaidDays - usedFromSlBalance);
+        extra_lwp_days = effectiveLwpDays;
         
         if (usedFromSlBalance > 0) {
           balanceEntry.used = parseFloat(balanceEntry.used || 0) + usedFromSlBalance;
         }
       } else {
         const availableDays = Math.max(0, remainingDays || 0);
-        const paidDays = Math.min(availableDays, requestedDays);
-        const lwpDays = requestedDays - paidDays;
+        const paidDays = effectivePaidDays;
+        const lwpDays = effectiveLwpDays;
         extra_lwp_days = lwpDays;
         
         if (paidDays > 0) {
@@ -2224,8 +2334,8 @@ exports.applyLeaveOnBehalf = async (req, res) => {
 
     // Insert leave request
     const insertQuery = `
-      INSERT INTO wp_hrms_leaves (employee_id, leave_type, start_date, end_date, leave_days, cl_days_charged, extra_lwp_days, reason, day_type, half_day_period, compensate_date, leader_id, leader_status, hr_id, hr_status, administrator_id, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO wp_hrms_leaves (employee_id, leave_type, start_date, end_date, leave_days, cl_days_charged, extra_lwp_days, reason, day_type, half_day_period, compensate_date, leader_id, leader_status, hr_id, hr_status, administrator_id, status, applied_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     const [insertResult] = await pool.query(insertQuery, [
       employee_id,
@@ -2244,7 +2354,8 @@ exports.applyLeaveOnBehalf = async (req, res) => {
       admin.id,
       'approved',
       admin.role === 'administrator' ? admin.id : null,
-      'approved'
+      'approved',
+      admin.id
     ]);
 
     const leaveId = insertResult.insertId;

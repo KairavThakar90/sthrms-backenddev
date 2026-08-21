@@ -71,6 +71,7 @@ const getHtmlTemplate = (title, content) => {
         .badge-pending { background-color: #fef3c7; color: #d97706; }
         .badge-approved { background-color: #d1fae5; color: #065f46; }
         .badge-rejected { background-color: #fee2e2; color: #991b1b; }
+        .badge-cancelled { background-color: #f3f4f6; color: #6b7280; }
         .badge-partially { background-color: #e0e7ff; color: #3730a3; }
         .details-table {
           width: 100%;
@@ -805,6 +806,124 @@ const notifyEmployeeLeaveAppliedOnBehalf = async (employeeEmail, employeeName, c
   return sendEmail(employeeEmail, subject, getHtmlTemplate('Leave Created on Your Behalf', content), { cc: ccEmails });
 };
 
+/**
+ * Notify Employee that their leave request was cancelled.
+ */
+const notifyEmployeeLeaveCancelled = async (employeeEmail, employeeName, leave) => {
+  const subject = `Leave Request Cancelled by ${employeeName}`;
+  const statusBadge = `<span class="badge badge-cancelled">Cancelled</span>`;
+
+  const content = `
+    <p>Hello ${employeeName},</p>
+    <p>Your leave request has been cancelled successfully.</p>
+
+    <table class="details-table">
+      <tr>
+        <td class="label">Leave Type</td>
+        <td>${leave.leave_type_full || leave.leave_type}</td>
+      </tr>
+      <tr>
+        <td class="label">Duration</td>
+        <td>${getDurationText(leave)}</td>
+      </tr>
+      <tr>
+        <td class="label">Reason</td>
+        <td>${leave.reason}</td>
+      </tr>
+      <tr>
+        <td class="label">Status</td>
+        <td>${statusBadge}</td>
+      </tr>
+    </table>
+
+    <p>If this was cancelled by mistake, please submit a new leave request.</p>
+    <p>Thank you,</p>
+    <p><strong>ST HRMS Leave Management System</strong></p>
+  `;
+
+  return sendEmail(employeeEmail, subject, getHtmlTemplate('Leave Request Cancelled', content));
+};
+
+/**
+ * Notify HR that an employee cancelled their leave request.
+ */
+const notifyHRLeaveCancelled = async (hrEmail, employeeName, leave) => {
+  const subject = `Leave Request Cancelled by ${employeeName}`;
+  const statusBadge = `<span class="badge badge-cancelled">Cancelled</span>`;
+
+  const content = `
+    <p>Hello HR Team,</p>
+    <p><strong>${employeeName}</strong> has cancelled their leave request.</p>
+
+    <table class="details-table">
+      <tr>
+        <td class="label">Employee</td>
+        <td>${employeeName}</td>
+      </tr>
+      <tr>
+        <td class="label">Leave Type</td>
+        <td>${leave.leave_type_full || leave.leave_type}</td>
+      </tr>
+      <tr>
+        <td class="label">Duration</td>
+        <td>${getDurationText(leave)}</td>
+      </tr>
+      <tr>
+        <td class="label">Reason</td>
+        <td>${leave.reason}</td>
+      </tr>
+      <tr>
+        <td class="label">Status</td>
+        <td>${statusBadge}</td>
+      </tr>
+    </table>
+
+    <p>This leave request has been removed from the pending approval queue.</p>
+  `;
+
+  return sendEmail(hrEmail, subject, getHtmlTemplate('Leave Request Cancelled', content));
+};
+
+/**
+ * Notify Leader that their team member cancelled a leave request.
+ */
+const notifyLeaderLeaveCancelled = async (leaderEmail, employeeName, leave) => {
+  const subject = `Leave Request Cancelled by ${employeeName}`;
+  const statusBadge = `<span class="badge badge-cancelled">Cancelled</span>`;
+
+  const content = `
+    <p>Hello,</p>
+    <p><strong>${employeeName}</strong> has cancelled their leave request.</p>
+
+    <table class="details-table">
+      <tr>
+        <td class="label">Employee</td>
+        <td>${employeeName}</td>
+      </tr>
+      <tr>
+        <td class="label">Leave Type</td>
+        <td>${leave.leave_type_full || leave.leave_type}</td>
+      </tr>
+      <tr>
+        <td class="label">Duration</td>
+        <td>${getDurationText(leave)}</td>
+      </tr>
+      <tr>
+        <td class="label">Reason</td>
+        <td>${leave.reason}</td>
+      </tr>
+      <tr>
+        <td class="label">Status</td>
+        <td>${statusBadge}</td>
+      </tr>
+    </table>
+
+    <p>This leave request has been cancelled and no further action is required.</p>
+  `;
+
+  return sendEmail(leaderEmail, subject, getHtmlTemplate('Leave Request Cancelled', content));
+};
+
 module.exports = {
   buildActionLink,
   buildLeaveNotificationSubject,
@@ -817,5 +936,8 @@ module.exports = {
   notifyHRLeaveUpdated,
   notifyLeaderDecisionOutcome,
   notifyEmployeeStatus,
-  notifyEmployeeLeaveAppliedOnBehalf
+  notifyEmployeeLeaveAppliedOnBehalf,
+  notifyEmployeeLeaveCancelled,
+  notifyHRLeaveCancelled,
+  notifyLeaderLeaveCancelled
 };

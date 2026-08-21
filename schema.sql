@@ -30,11 +30,14 @@ CREATE TABLE IF NOT EXISTS `wp_hrms_leaves` (
   -- Overall Status
   `status` ENUM('pending', 'approved', 'rejected', 'partially_approved', 'cancelled') DEFAULT 'pending',
   
+  `applied_by` BIGINT UNSIGNED DEFAULT NULL,
+  
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   
   -- Foreign key references to WordPress users table
-  FOREIGN KEY (`employee_id`) REFERENCES `wp_users`(`ID`) ON DELETE CASCADE
+  FOREIGN KEY (`employee_id`) REFERENCES `wp_users`(`ID`) ON DELETE CASCADE,
+  FOREIGN KEY (`applied_by`) REFERENCES `wp_users`(`ID`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 2. Leave Balances Table
