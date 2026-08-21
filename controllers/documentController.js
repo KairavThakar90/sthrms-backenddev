@@ -251,3 +251,39 @@ exports.listUserDocuments = async (req, res) => {
     return res.status(500).json({ success: false, message: 'Failed to fetch documents.' });
   }
 };
+
+exports.listAllDocuments = async (req, res) => {
+  try {
+    const documentType = req.query?.document_type || req.query?.documentType;
+
+    let query = `
+      SELECT d.id, d.user_id, d.document_type, d.upload_mode, d.document_id, d.document_url, d.back_document_id, d.back_document_url, d.created_at,
+             u.display_name AS employee_name, u.user_email AS employee_email
+      FROM wp_user_documents d
+      JOIN wp_users u ON d.user_id = u.ID
+      WHERE 1=1
+    `;
+    const values = [];
+
+    if (documentType) {
+      query += ' AND d.document_type = ?';
+      values.push(String(documentType).trim().toUpperCase());
+    }
+
+    query += ' ORDER BY d.created_at DESC, d.id DESC';
+
+    const [rows] = await pool.query(query, values);
+
+    return res.json({
+      success: true,
+      data: rows.map((row) => ({
+        ...row,
+        attachment_id: row.document_id,
+        back_attachment_id: row.back_document_id,
+      })),
+    });
+  } catch (error) {
+    console.error('[Document List All] Failed:', error);
+    return res.status(500).json({ success: false, message: 'Failed to fetch all documents.' });
+  }
+};

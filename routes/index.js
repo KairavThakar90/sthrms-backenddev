@@ -36,6 +36,7 @@ router.post('/documents/upload', upload.fields([
   { name: 'back_file', maxCount: 1 },
 ]), documentController.uploadDocumentToWordPress);
 router.post('/documents/save', documentController.saveDocumentMetadata);
+router.get('/all-documents', documentController.listAllDocuments);
 router.get('/documents', documentController.listUserDocuments);
 router.get('/documents/:user_id', documentController.listUserDocuments);
 router.use('/feedback', feedbackRoutes);
